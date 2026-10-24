@@ -1,0 +1,11 @@
+{
+  "name": "lift",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Workout tracker for sets, reps and progress against a training program",
+  "type": "module",
+  "scripts": {
+    "start": "python3 -m http.server 8000",
+    "test": "node --test tests/*.test.js"
+  }
+}

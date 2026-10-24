@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Lift</title>
+    <meta name="description" content="Track workouts, sets, reps and progress against your training program." />
+    <meta name="theme-color" content="#2a78d6" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icon.svg" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <header class="app-bar">
+      <h1>Lift</h1>
+    </header>
+
+    <main id="main" tabindex="-1"></main>
+
+    <div id="rest" class="rest" hidden role="timer" aria-live="off">
+      <span>Rest</span>
+      <b id="rest-time">0:00</b>
+      <button class="ghost" data-rest="add">+30s</button>
+      <button class="ghost" data-rest="skip">Skip</button>
+    </div>
+
+    <div id="toast" class="toast" role="status" hidden></div>
+
+    <nav class="tabs" aria-label="Sections">
+      <a href="#/workout" data-view="workout"><span aria-hidden="true">🏋️</span>Workout</a>
+      <a href="#/program" data-view="program"><span aria-hidden="true">📋</span>Program</a>
+      <a href="#/progress" data-view="progress"><span aria-hidden="true">📈</span>Progress</a>
+      <a href="#/body" data-view="body"><span aria-hidden="true">⚖️</span>Body</a>
+      <a href="#/settings" data-view="settings"><span aria-hidden="true">⚙️</span>Data</a>
+    </nav>
+
+    <dialog id="exercise-dialog"><form method="dialog"></form></dialog>
+
+    <noscript>Lift needs JavaScript enabled.</noscript>
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>
