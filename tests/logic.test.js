@@ -126,3 +126,11 @@ test("weeklyVolume and personalRecords", () => {
   assert.ok(prs.length > 0);
   assert.ok(prs[0].e1rm >= prs.at(-1).e1rm);
 });
+
+test("rest timer defaults to 3 minutes unless changed on the timer", async () => {
+  const { migrate, freshState } = await import("../js/store.js");
+  assert.equal(freshState().settings.restSeconds, 180);
+  const base = seed();
+  assert.equal(migrate({ ...base, settings: { restSeconds: 120 } }).settings.restSeconds, 180);
+  assert.equal(migrate({ ...base, settings: { restSeconds: 90, restCustom: true } }).settings.restSeconds, 90);
+});

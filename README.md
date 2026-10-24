@@ -6,11 +6,11 @@ Lift is a phone-friendly web app for tracking workouts, exercises, sets and reps
 
 | Tab | What it does |
 | --- | --- |
-| **Workout** | Opens on your next session. Each exercise shows that week's target (sets · rep range · weight · RIR), a link to its form video, and what you lifted last time. Log the weight and reps for each set. Tapping ✓ marks a set done and starts a rest timer. When you change the weight on a set, the sets you haven't done yet get the same weight. After each exercise you get double-progression advice (add weight, add reps, or hold). |
+| **Workout** | Opens on your next session. Each exercise shows that week's target (sets · rep range · weight · RIR), a link to its form video, and what you lifted last time. Log the weight and reps for each set. A rest timer is pinned to the top of the screen. It defaults to 3:00; −15s/+15s change the saved duration, and while it's running they adjust only the current rest. A chime plays when time is up. Tapping ✓ marks a set done and starts the timer (you can turn that off under Data). When you change the weight on a set, the sets you haven't done yet get the same weight. After each exercise you get double-progression advice (add weight, add reps, or hold). |
 | **Program** | The spreadsheet grid: exercises × weeks, showing planned `sets × weight`, RIR, and the reps you actually did, colored green for done and amber for partial. Tap a cell to log that session. Tap an exercise to edit its name, rep range, video, note or per-week targets, or to reorder or delete it. You can also add exercises, days and weeks. |
 | **Progress** | How much of the program you've finished, your next session, and weekly volume. For each exercise there's a chart of estimated 1RM and top weight against the program's target weight, plus a week-by-week table. Also shows a weekly volume chart and your best lift for each exercise. |
 | **Body** | Daily weigh-ins, 7-day averages and week-over-week change, and a goal line (from the sheet: 208 lb start, −0.8%/week). |
-| **Data** | Rest timer length, lb/kg, JSON backup export/import, CSV export of every set, and a reset back to the spreadsheet data. |
+| **Data** | Auto-start for the rest timer, lb/kg, JSON backup export/import, CSV export of every set, and a reset back to the spreadsheet data. |
 
 The app works offline once it has loaded (there's a service worker), and you can add it to your phone's home screen.
 
@@ -57,6 +57,7 @@ js/logic.js           pure functions: progress, e1RM, advice, weekly averages
 js/charts.js          dependency-free SVG line/column charts with tooltips
 js/store.js           localStorage persistence, import validation
 js/cloud.js           private per-user sync when hosted as a claude.ai Artifact
+js/chime.js           synthesized end-of-rest chime (Web Audio)
 js/seed.js            program + history from the spreadsheet
 sw.js                 offline cache
 scripts/build-single.mjs  bundles the app into one HTML file

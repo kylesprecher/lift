@@ -7,7 +7,7 @@ const clone = (x) => JSON.parse(JSON.stringify(x));
 
 export function freshState() {
   // updatedAt 0: any copy saved from another device is newer than this.
-  return { ...clone(SEED), settings: { restSeconds: 120 }, updatedAt: 0 };
+  return { ...clone(SEED), settings: { restSeconds: 180, autoRest: true }, updatedAt: 0 };
 }
 
 export function load() {
@@ -42,7 +42,12 @@ export function migrate(data) {
     logs: data.logs ?? {},
     sessions: data.sessions ?? {},
     body: data.body ?? { startDate: null, startWeight: null, weeklyChangePct: 0, entries: [] },
-    settings: { restSeconds: 120, ...data.settings },
+    settings: {
+      autoRest: true,
+      ...data.settings,
+      // 3 minutes unless the duration was changed on the timer.
+      restSeconds: data.settings?.restCustom ? data.settings.restSeconds : 180,
+    },
     updatedAt: data.updatedAt ?? 0,
   };
 }

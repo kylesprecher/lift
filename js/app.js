@@ -2,6 +2,7 @@ import * as L from "./logic.js";
 import { load, save, freshState, migrate } from "./store.js";
 import { lineChart, columnChart } from "./charts.js";
 import * as cloud from "./cloud.js";
+import * as chime from "./chime.js";
 
 let state = load();
 const ui = { view: "workout", weekId: null, dayId: null, exerciseId: null };
@@ -179,6 +180,7 @@ function renderWorkout() {
   const prog = L.sessionProgress(state, week.id, day.id);
 
   main.innerHTML = `
+    ${restBar()}
     <section class="session-picker">
       <label class="field inline">
         <span>Week</span>
@@ -359,6 +361,7 @@ function patchCard(exId) {
 }
 
 function onWorkoutClick(e) {
+  if (onRestClick(e)) return;
   const dayBtn = e.target.closest("[data-day]");
   if (dayBtn) {
     openSession(ui.weekId, dayBtn.dataset.day);
@@ -401,7 +404,7 @@ function onWorkoutClick(e) {
     if (s.done) {
       if (s.weight === "" || s.weight == null) s.weight = t.weight ?? "";
       if (s.reps === "" || s.reps == null) s.reps = defaultReps(exId, log, Number(btn.dataset.i));
-      startRest();
+      if (state.settings.autoRest !== false) startRest({ restart: true });
     }
   } else if (action === "add-set") {
     const last = log.sets.at(-1);
@@ -427,39 +430,149 @@ function onWorkoutClick(e) {
 
 // ------------------------------------------------------------------ rest timer
 
-const rest = { end: 0, timer: null };
+// The timer lives outside the view so it keeps running while you switch
+// tabs; the bar at the top of the workout screen shows it.
+const REST_MIN = 15;
+const REST_MAX = 600;
+const REST_STEP = 15;
+// total = length in seconds of the current rest, for the progress bar.
+const rest = { status: "idle", end: 0, remaining: 0, total: 0, timer: null, wakeLock: null };
 
-function startRest(seconds = state.settings.restSeconds) {
-  if (!seconds) return;
-  rest.end = Date.now() + seconds * 1000;
-  document.getElementById("rest").hidden = false;
-  document.body.classList.add("resting");
+const restDuration = () => Number(state.settings.restSeconds) || 180;
+const clock = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+
+function restLeft() {
+  if (rest.status === "running") return Math.max(0, Math.ceil((rest.end - Date.now()) / 1000));
+  if (rest.status === "paused") return Math.ceil(rest.remaining / 1000);
+  return restDuration();
+}
+
+function restBar() {
+  return `
+    <section class="rest-bar" id="rest-bar" data-status="${rest.status}" aria-label="Rest timer">
+      <div class="rest-readout">
+        <span class="rest-label">Rest</span>
+        <b id="rest-time" role="timer">${clock(restLeft())}</b>
+      </div>
+      <div class="rest-adjust" role="group" aria-label="Change rest time">
+        <button class="ghost" data-rest="minus" aria-label="15 seconds less">−15s</button>
+        <button class="ghost" data-rest="plus" aria-label="15 seconds more">+15s</button>
+      </div>
+      <div class="rest-controls">
+        <button class="rest-main" data-rest="toggle" id="rest-toggle">${restToggleLabel()}</button>
+        <button class="ghost" data-rest="reset" aria-label="Reset timer" ${rest.status === "idle" ? "disabled" : ""}>Reset</button>
+      </div>
+      <div class="rest-track" aria-hidden="true"><span id="rest-progress"></span></div>
+    </section>`;
+}
+
+const restToggleLabel = () => (rest.status === "running" ? "Pause" : rest.status === "paused" ? "Resume" : "Start");
+
+function startRest({ restart = false } = {}) {
+  chime.unlock(); // called from a tap, so sound is allowed later
+  if (rest.status === "paused" && !restart) {
+    rest.end = Date.now() + rest.remaining;
+  } else {
+    rest.total = restDuration();
+    rest.end = Date.now() + rest.total * 1000;
+  }
+  rest.status = "running";
   clearInterval(rest.timer);
   rest.timer = setInterval(tickRest, 250);
+  keepAwake(true);
+  tickRest();
+}
+
+function pauseRest() {
+  rest.remaining = Math.max(0, rest.end - Date.now());
+  rest.status = "paused";
+  clearInterval(rest.timer);
+  keepAwake(false);
+  tickRest();
+}
+
+function resetRest() {
+  rest.status = "idle";
+  clearInterval(rest.timer);
+  keepAwake(false);
+  tickRest();
+}
+
+function adjustRest(delta) {
+  if (rest.status === "running") {
+    rest.end = Math.max(Date.now() + 1000, rest.end + delta * 1000);
+    rest.total = Math.max(rest.total + delta, restLeft());
+  } else if (rest.status === "paused") {
+    rest.remaining = Math.max(1000, rest.remaining + delta * 1000);
+    rest.total = Math.max(rest.total + delta, restLeft());
+  } else {
+    // While idle the buttons change the saved duration.
+    state.settings.restSeconds = Math.min(REST_MAX, Math.max(REST_MIN, restDuration() + delta));
+    state.settings.restCustom = true;
+    persist();
+  }
   tickRest();
 }
 
 function tickRest() {
-  const left = Math.max(0, Math.ceil((rest.end - Date.now()) / 1000));
-  document.getElementById("rest-time").textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
-  if (left === 0) {
-    stopRest();
-    navigator.vibrate?.([200, 100, 200]);
-    toast("Rest's up — next set!");
+  const left = restLeft();
+  if (rest.status === "running" && left === 0) return finishRest();
+  const bar = document.getElementById("rest-bar");
+  if (!bar) return;
+  bar.dataset.status = rest.status;
+  document.getElementById("rest-time").textContent = clock(left);
+  document.getElementById("rest-toggle").textContent = restToggleLabel();
+  bar.querySelector('[data-rest="reset"]').disabled = rest.status === "idle";
+  const pct = rest.status === "idle" ? 0 : 1 - left / Math.max(rest.total, 1);
+  document.getElementById("rest-progress").style.width = `${Math.round(pct * 100)}%`;
+}
+
+function finishRest() {
+  resetRest();
+  chime.play();
+  navigator.vibrate?.([200, 100, 200]);
+  toast("Rest's up — next set!");
+  const bar = document.getElementById("rest-bar");
+  if (bar) {
+    bar.classList.remove("done");
+    void bar.offsetWidth; // restart the flash animation
+    bar.classList.add("done");
   }
 }
 
-function stopRest() {
-  clearInterval(rest.timer);
-  document.getElementById("rest").hidden = true;
-  document.body.classList.remove("resting");
+/** Keep the screen on while resting so the chime isn't missed. Optional. */
+async function keepAwake(on) {
+  try {
+    if (on && !rest.wakeLock && navigator.wakeLock) {
+      rest.wakeLock = await navigator.wakeLock.request("screen");
+      rest.wakeLock.addEventListener?.("release", () => (rest.wakeLock = null));
+    } else if (!on && rest.wakeLock) {
+      await rest.wakeLock.release();
+      rest.wakeLock = null;
+    }
+  } catch {
+    rest.wakeLock = null;
+  }
 }
 
-document.getElementById("rest").addEventListener("click", (e) => {
+function onRestClick(e) {
   const a = e.target.closest("[data-rest]")?.dataset.rest;
-  if (a === "add") rest.end += 30000;
-  if (a === "skip") stopRest();
-  tickRest();
+  if (!a) return false;
+  if (a === "toggle") {
+    if (rest.status === "running") pauseRest();
+    else startRest();
+  }
+  if (a === "reset") resetRest();
+  if (a === "minus") adjustRest(-REST_STEP);
+  if (a === "plus") adjustRest(REST_STEP);
+  return true;
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    if (rest.status === "running") keepAwake(true);
+    tickRest();
+  }
 });
 
 // ------------------------------------------------------------------ program
@@ -974,7 +1087,7 @@ function renderSettings() {
     <section class="card">
       <h3>Workout</h3>
       <form id="settings-form" class="goal-form">
-        <label class="field"><span>Rest timer (seconds, 0 = off)</span><input type="number" min="0" step="15" name="restSeconds" value="${state.settings.restSeconds}"></label>
+        <label class="field check-field"><input type="checkbox" id="auto-rest" name="autoRest" ${state.settings.autoRest !== false ? "checked" : ""}><span>Start the rest timer when I tick a set</span></label>
         <label class="field"><span>Units</span>
           <select name="unit">${["lb", "kg"].map((u) => `<option ${u === unit() ? "selected" : ""}>${u}</option>`).join("")}</select>
         </label>
@@ -1061,7 +1174,7 @@ function onSettingsSubmit(e) {
   if (e.target.id !== "settings-form") return;
   e.preventDefault();
   const data = new FormData(e.target);
-  state.settings.restSeconds = Math.max(0, Number(data.get("restSeconds")) || 0);
+  state.settings.autoRest = data.get("autoRest") === "on";
   state.program.unit = data.get("unit");
   persist();
   toast("Settings saved");

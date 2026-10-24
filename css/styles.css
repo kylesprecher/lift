@@ -85,8 +85,14 @@ body {
   line-height: 1.4;
   padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 16px);
 }
-body.resting {
-  padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 76px);
+/* Paints the band above the sticky rest bar (phone status-bar area). */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto;
+  height: env(safe-area-inset-top, 0px);
+  background: var(--bg);
+  z-index: 10;
 }
 
 h1,
@@ -267,6 +273,18 @@ textarea {
   font-size: 0.875rem;
   color: var(--text-2);
 }
+.check-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+.check-field input {
+  width: 20px;
+  min-height: 20px;
+  flex: none;
+}
 .field.inline {
   display: flex;
   align-items: center;
@@ -294,6 +312,108 @@ textarea {
 }
 
 /* ---------- workout */
+
+.rest-bar {
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  z-index: 5;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 10px 12px 12px;
+  margin-inline: -4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+.rest-readout {
+  display: grid;
+  line-height: 1.1;
+}
+.rest-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+}
+#rest-time {
+  font-size: 1.9rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  min-width: 4.2ch;
+}
+.rest-bar[data-status="running"] #rest-time {
+  color: var(--accent);
+}
+.rest-bar[data-status="paused"] #rest-time {
+  color: var(--text-2);
+}
+.rest-adjust {
+  display: flex;
+  gap: 2px;
+  justify-content: center;
+}
+.rest-adjust .ghost {
+  padding: 6px 8px;
+  font-variant-numeric: tabular-nums;
+}
+.rest-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.rest-main {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  min-width: 88px;
+}
+.rest-bar[data-status="running"] .rest-main {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border);
+}
+.rest-track {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 4px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.rest-track span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.25s linear;
+}
+.rest-bar.done {
+  animation: rest-done 1.2s ease-out 2;
+}
+@keyframes rest-done {
+  0% {
+    background: color-mix(in srgb, var(--good) 35%, var(--surface));
+  }
+  100% {
+    background: var(--surface);
+  }
+}
+@media (max-width: 560px) {
+  .rest-bar {
+    grid-template-columns: auto 1fr;
+  }
+  .rest-adjust {
+    justify-content: flex-end;
+  }
+  .rest-controls {
+    grid-column: 1 / -1;
+  }
+  .rest-main {
+    flex: 1;
+  }
+}
 
 .session-picker {
   display: grid;
@@ -842,29 +962,6 @@ table.targets input {
   opacity: 1;
 }
 
-.rest {
-  position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 10px);
-  background: var(--text);
-  color: var(--bg);
-  border-radius: 999px;
-  padding: 4px 6px 4px 16px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
-  z-index: 11;
-}
-.rest b {
-  font-size: 1.2rem;
-  font-variant-numeric: tabular-nums;
-  min-width: 3.2em;
-}
-.rest .ghost {
-  color: var(--bg);
-}
 .toast {
   position: fixed;
   left: 50%;
