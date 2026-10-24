@@ -338,8 +338,7 @@ function onWorkoutChange(e) {
       }
     });
   }
-  if (field === "reps" && value !== "") log.sets[i].done = true;
-  if (field === "reps" && value === "") log.sets[i].done = false;
+  // Only the ✓ button marks a set done or not done.
   persist();
   patchCard(exId);
 }

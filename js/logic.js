@@ -19,9 +19,9 @@ export function estimate1RM(weight, reps) {
   return w * (1 + r / 30);
 }
 
-/** Sets that count as performed: marked done, or with reps entered. */
+/** Sets that count as performed: the ones checked off with ✓. */
 export function performedSets(log) {
-  return (log?.sets ?? []).filter((s) => s.done || Number(s.reps) > 0);
+  return (log?.sets ?? []).filter((s) => s.done);
 }
 
 export function setVolume(sets) {

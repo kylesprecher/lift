@@ -26,7 +26,8 @@ test("summarizeLog and formatLog", () => {
   assert.equal(s.topWeight, 75);
   assert.equal(s.volume, 75 * 17);
   assert.equal(L.formatLog(log, "lb"), "75 lb × 9, 8");
-  assert.equal(L.formatLog({ sets: [{ weight: 75, reps: 9 }, { weight: 80, reps: 7 }] }), "75 × 9, 80 × 7");
+  assert.equal(L.formatLog({ sets: [{ weight: 75, reps: 9, done: true }, { weight: 80, reps: 7, done: true }] }), "75 × 9, 80 × 7");
+  assert.equal(L.summarizeLog({ sets: [{ weight: 75, reps: 9, done: false }] }), null, "unchecked sets don't count");
   assert.equal(L.summarizeLog({ sets: [] }), null);
 });
 
