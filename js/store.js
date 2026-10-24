@@ -6,7 +6,8 @@ const KEY = "lift.state.v1";
 const clone = (x) => JSON.parse(JSON.stringify(x));
 
 export function freshState() {
-  return { ...clone(SEED), settings: { restSeconds: 120 } };
+  // updatedAt 0: any copy saved from another device is newer than this.
+  return { ...clone(SEED), settings: { restSeconds: 120 }, updatedAt: 0 };
 }
 
 export function load() {
@@ -14,6 +15,7 @@ export function load() {
     const raw = localStorage.getItem(KEY);
     if (raw) return migrate(JSON.parse(raw));
   } catch (err) {
+    // Unreadable data or storage blocked (private mode, sandboxed preview).
     console.warn("Could not read saved data, starting fresh", err);
   }
   return freshState();
@@ -41,5 +43,6 @@ export function migrate(data) {
     sessions: data.sessions ?? {},
     body: data.body ?? { startDate: null, startWeight: null, weeklyChangePct: 0, entries: [] },
     settings: { restSeconds: 120, ...data.settings },
+    updatedAt: data.updatedAt ?? 0,
   };
 }

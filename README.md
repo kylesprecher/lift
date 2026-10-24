@@ -14,6 +14,10 @@ Lift is a phone-friendly web app for tracking workouts, exercises, sets and reps
 
 The app works offline once it has loaded (there's a service worker), and you can add it to your phone's home screen.
 
+## Using it on your phone
+
+Lift is published as a private claude.ai Artifact: <https://claude.ai/artifact/94DosEAMHGR3RwauzDXa9J>. Sign in to Claude on your phone and open that link. When it runs there, your log is saved privately to your Claude account and syncs between your devices. The indicator in the top-right corner says whether it's "Synced". To publish an update, run `npm run build:artifact` and republish `dist/lift.artifact.html` to the same artifact.
+
 ## Running it
 
 It's plain HTML, CSS and JavaScript modules. There's no build step and nothing to install. Serve the folder over HTTP:
@@ -25,7 +29,9 @@ npm start            # python3 -m http.server 8000
 
 You can host it on any static host (GitHub Pages, Netlify, …) by publishing the repository root.
 
-**Data storage:** everything is saved in your browser's `localStorage` on that device. Use **Data → Export backup** to keep a copy or to move to another device.
+`npm run build` bundles everything into one file, `dist/lift.html`, which opens straight from disk with no server.
+
+**Data storage:** everything is saved in your browser's `localStorage` on that device (plus your Claude account when hosted as an Artifact). Use **Data → Export backup** to keep a copy or to move to another device.
 
 ## Tests
 
@@ -50,7 +56,9 @@ js/app.js             views and event handling
 js/logic.js           pure functions: progress, e1RM, advice, weekly averages
 js/charts.js          dependency-free SVG line/column charts with tooltips
 js/store.js           localStorage persistence, import validation
+js/cloud.js           private per-user sync when hosted as a claude.ai Artifact
 js/seed.js            program + history from the spreadsheet
 sw.js                 offline cache
+scripts/build-single.mjs  bundles the app into one HTML file
 tests/logic.test.js   unit tests
 ```

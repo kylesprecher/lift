@@ -1,6 +1,7 @@
 import * as L from "./logic.js";
 import { load, save, freshState, migrate } from "./store.js";
 import { lineChart, columnChart } from "./charts.js";
+import * as cloud from "./cloud.js";
 
 let state = load();
 const ui = { view: "workout", weekId: null, dayId: null, exerciseId: null };
@@ -23,7 +24,103 @@ const target = (weekId, exId) => state.program.targets?.[weekId]?.[exId] ?? {};
 const getLog = (weekId, exId) => state.logs?.[weekId]?.[exId];
 
 function persist() {
-  if (!save(state)) toast("Couldn't save — storage may be full or blocked.");
+  state.updatedAt = Date.now();
+  if (!save(state) && !cloudOn) toast("Couldn't save — storage may be full or blocked.");
+  cloud.push(state);
+}
+
+/**
+ * In-page replacement for prompt()/confirm() (which hosted pages can't use).
+ * Resolves the field values as an object, or null when cancelled.
+ */
+function ask({ title, message = "", fields = [], ok = "OK", danger = false }) {
+  const dlg = document.getElementById("ask-dialog");
+  const form = dlg.querySelector("form");
+  form.innerHTML = `
+    <h2>${esc(title)}</h2>
+    ${message ? `<p class="muted">${esc(message)}</p>` : ""}
+    ${fields
+      .map(
+        (f) => `<label class="field"><span>${esc(f.label)}</span>${
+          f.multiline
+            ? `<textarea id="ask-${f.name}" name="${f.name}" rows="3" placeholder="${esc(f.placeholder ?? "")}">${esc(f.value ?? "")}</textarea>`
+            : `<input id="ask-${f.name}" name="${f.name}" value="${esc(f.value ?? "")}" placeholder="${esc(f.placeholder ?? "")}" ${f.required ? "required" : ""}>`
+        }</label>`
+      )
+      .join("")}
+    <div class="dialog-actions">
+      <span class="spacer"></span>
+      <button type="button" class="secondary" data-cancel>Cancel</button>
+      <button type="submit" class="${danger ? "danger" : "primary"}">${esc(ok)}</button>
+    </div>`;
+  return new Promise((resolve) => {
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      const values = Object.fromEntries([...new FormData(form)].map(([k, v]) => [k, String(v).trim()]));
+      resolve(values);
+      dlg.close();
+    };
+    form.querySelector("[data-cancel]").onclick = () => dlg.close();
+    dlg.onclose = () => resolve(null);
+    dlg.showModal();
+    form.querySelector("input, textarea")?.focus();
+  });
+}
+
+/** Show text with Copy and Save buttons (export/backup). */
+function showText(title, text, filename, type) {
+  const dlg = document.getElementById("ask-dialog");
+  const form = dlg.querySelector("form");
+  form.innerHTML = `
+    <h2>${esc(title)}</h2>
+    <textarea id="export-text" class="export" rows="10" readonly>${esc(text)}</textarea>
+    <div class="dialog-actions">
+      <button type="button" class="secondary" data-x="save">Save file</button>
+      <button type="button" class="secondary" data-x="copy">Copy</button>
+      <span class="spacer"></span>
+      <button type="button" class="primary" data-x="close">Done</button>
+    </div>`;
+  form.onsubmit = (e) => e.preventDefault();
+  form.onclick = async (e) => {
+    const x = e.target.closest("[data-x]")?.dataset.x;
+    if (x === "close") dlg.close();
+    if (x === "copy") {
+      try {
+        await navigator.clipboard.writeText(text);
+        toast("Copied");
+      } catch {
+        const area = form.querySelector("textarea");
+        area.focus();
+        area.select();
+        toast("Select all and copy");
+      }
+    }
+    if (x === "save") saveFile(filename, text, type);
+  };
+  dlg.showModal();
+}
+
+async function saveFile(filename, text, type) {
+  const downloads = window.claude?.use ? await window.claude.use("downloads") : null;
+  if (downloads) {
+    try {
+      const result = await downloads.save({ filename, data: text });
+      if (result === "saved") toast(`Saved ${filename}`);
+    } catch (err) {
+      if (err?.code !== "declined") toast("Couldn't save the file — use Copy instead.");
+    }
+    return;
+  }
+  if (window.claude) {
+    toast("Saving files isn't available here — use Copy instead.");
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: filename });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function toast(msg) {
@@ -36,18 +133,17 @@ function toast(msg) {
 
 // ------------------------------------------------------------------ routing
 
+const VIEWS = ["workout", "program", "progress", "body", "data"];
+
+// Views are plain `#token` links so they also work when the app is hosted
+// as an Artifact; the selected week/day lives in `ui`, not the URL.
 function route() {
-  const [view, a, b] = location.hash.replace(/^#\/?/, "").split("/");
-  ui.view = ["workout", "program", "progress", "body", "settings"].includes(view) ? view : "workout";
-  if (ui.view === "workout") {
-    if (weekById(a) && dayById(b)) {
-      ui.weekId = a;
-      ui.dayId = b;
-    } else if (!ui.weekId || !weekById(ui.weekId) || !dayById(ui.dayId)) {
-      const next = L.nextSession(state) ?? L.allSessions(state.program).at(-1);
-      ui.weekId = next.week.id;
-      ui.dayId = next.day.id;
-    }
+  const token = location.hash.replace(/^#\/?/, "").split("/")[0];
+  ui.view = VIEWS.includes(token) ? token : "workout";
+  if (!weekById(ui.weekId) || !dayById(ui.dayId)) {
+    const next = L.nextSession(state) ?? L.allSessions(state.program).at(-1);
+    ui.weekId = next.week.id;
+    ui.dayId = next.day.id;
   }
   document.querySelectorAll("nav.tabs a").forEach((link) => {
     if (link.dataset.view === ui.view) link.setAttribute("aria-current", "page");
@@ -61,8 +157,14 @@ function go(hash) {
   else location.hash = hash;
 }
 
+function openSession(weekId, dayId) {
+  ui.weekId = weekId;
+  ui.dayId = dayId;
+  go("#workout");
+}
+
 function render() {
-  const views = { workout: renderWorkout, program: renderProgram, progress: renderProgress, body: renderBody, settings: renderSettings };
+  const views = { workout: renderWorkout, program: renderProgram, progress: renderProgress, body: renderBody, data: renderSettings };
   views[ui.view]();
   main.focus({ preventScroll: true });
 }
@@ -214,7 +316,7 @@ function refreshSessionMeta() {
 
 function onWorkoutChange(e) {
   if (e.target.id === "week-select") {
-    go(`#/workout/${e.target.value}/${ui.dayId}`);
+    openSession(e.target.value, ui.dayId);
     return;
   }
   const field = e.target.dataset.field;
@@ -259,7 +361,7 @@ function patchCard(exId) {
 function onWorkoutClick(e) {
   const dayBtn = e.target.closest("[data-day]");
   if (dayBtn) {
-    go(`#/workout/${ui.weekId}/${dayBtn.dataset.day}`);
+    openSession(ui.weekId, dayBtn.dataset.day);
     return;
   }
   const btn = e.target.closest("[data-action]");
@@ -273,7 +375,7 @@ function onWorkoutClick(e) {
     const next = L.nextSession(state);
     if (next) {
       toast(`Workout saved. Next up: ${weekLabel(next.week)} · ${dayLabel(next.day)}`);
-      go(`#/workout/${next.week.id}/${next.day.id}`);
+      openSession(next.week.id, next.day.id);
     } else {
       toast("Workout saved — that's the whole program done! 🎉");
       render();
@@ -307,9 +409,17 @@ function onWorkoutClick(e) {
   } else if (action === "remove-set") {
     if (log.sets.length > 1) log.sets.pop();
   } else if (action === "edit-note") {
-    const note = prompt("Note for this exercise (how it felt, form cues, pain…)", log.note ?? "");
-    if (note === null) return;
-    log.note = note.trim() || undefined;
+    ask({
+      title: "Exercise note",
+      fields: [{ name: "note", label: "How it felt, form cues, pain…", value: log.note ?? "", multiline: true }],
+      ok: "Save note",
+    }).then((r) => {
+      if (!r) return;
+      log.note = r.note || undefined;
+      persist();
+      refreshCard(exId);
+    });
+    return;
   }
   persist();
   refreshCard(exId);
@@ -391,7 +501,7 @@ function programDayTable(day) {
               ${weeks
                 .map((w) => {
                   const done = L.isSessionComplete(state, w.id, day.id);
-                  return `<th><a href="#/workout/${w.id}/${day.id}">${esc(w.label)}${w.deload ? "<br><small>deload</small>" : ""}</a>${done ? ' <span class="tick-mark" title="Session complete">✓</span>' : ""}</th>`;
+                  return `<th><a href="#workout" data-open="${w.id}:${day.id}">${esc(w.label)}${w.deload ? "<br><small>deload</small>" : ""}</a>${done ? ' <span class="tick-mark" title="Session complete">✓</span>' : ""}</th>`;
                 })
                 .join("")}
             </tr>
@@ -426,21 +536,29 @@ function programCell(week, day, ex) {
       ? `${L.fmt(done[0].weight)}: ${done.map((s) => s.reps).join(",")}`
       : done.map((s) => s.reps).join(",")
     : "";
-  return `<td class="${status}"><a href="#/workout/${week.id}/${day.id}">
+  return `<td class="${status}"><a href="#workout" data-open="${week.id}:${day.id}">
       <span class="plan">${plan}</span>
       ${t.rir ? `<span class="rir">${esc(t.rir)}</span>` : t.reps ? `<span class="rir">${esc(t.reps)}</span>` : ""}
       ${actual ? `<span class="actual">${esc(actual)}</span>` : ""}
     </a></td>`;
 }
 
-function onProgramClick(e) {
+async function onProgramClick(e) {
+  const open = e.target.closest("[data-open]");
+  if (open) {
+    e.preventDefault();
+    const [weekId, dayId] = open.dataset.open.split(":");
+    openSession(weekId, dayId);
+    return;
+  }
   const btn = e.target.closest("[data-action]");
   if (!btn) return;
   const p = state.program;
   switch (btn.dataset.action) {
     case "rename-program": {
-      const name = prompt("Program name", p.name);
-      if (name?.trim()) p.name = name.trim();
+      const r = await ask({ title: "Rename program", fields: [{ name: "name", label: "Program name", value: p.name, required: true }], ok: "Rename" });
+      if (!r?.name) return;
+      p.name = r.name;
       break;
     }
     case "add-week": {
@@ -453,20 +571,31 @@ function onProgramClick(e) {
       break;
     }
     case "add-day": {
-      const name = prompt("Day name (e.g. “Day 5”)", `Day ${p.days.length + 1}`);
-      if (!name?.trim()) return;
-      const focus = prompt("Focus (e.g. “Arms”)", "") ?? "";
-      p.days.push({ id: uid("d"), name: name.trim(), focus: focus.trim(), exercises: [] });
+      const r = await ask({
+        title: "Add a training day",
+        fields: [
+          { name: "name", label: "Day name", value: `Day ${p.days.length + 1}`, required: true },
+          { name: "focus", label: "Focus", placeholder: "e.g. Arms" },
+        ],
+        ok: "Add day",
+      });
+      if (!r?.name) return;
+      p.days.push({ id: uid("d"), name: r.name, focus: r.focus, exercises: [] });
       break;
     }
     case "edit-day": {
       const day = dayById(btn.dataset.dayId);
-      const name = prompt("Day name", day.name);
-      if (name === null) return;
-      const focus = prompt("Focus", day.focus ?? "");
-      if (focus === null) return;
-      if (name.trim()) day.name = name.trim();
-      day.focus = focus.trim();
+      const r = await ask({
+        title: "Rename day",
+        fields: [
+          { name: "name", label: "Day name", value: day.name, required: true },
+          { name: "focus", label: "Focus", value: day.focus ?? "" },
+        ],
+        ok: "Save",
+      });
+      if (!r?.name) return;
+      day.name = r.name;
+      day.focus = r.focus;
       break;
     }
     case "add-exercise":
@@ -527,12 +656,14 @@ function openExerciseDialog(exId, dayId) {
     </div>`;
 
   const form = dlg.querySelector("form");
-  form.onclick = (e) => {
+  form.onclick = async (e) => {
     const a = e.target.closest("[data-dlg]")?.dataset.dlg;
     if (!a) return;
     if (a === "cancel") return dlg.close();
     if (a === "delete") {
-      if (!confirm(`Delete ${ex.name} and its logged sets?`)) return;
+      dlg.close();
+      const sure = await ask({ title: `Delete ${ex.name}?`, message: "Its targets and every logged set will be removed.", ok: "Delete", danger: true });
+      if (!sure) return;
       day.exercises.splice(idx, 1);
       for (const w of state.program.weeks) {
         delete state.program.targets[w.id]?.[exId];
@@ -852,11 +983,16 @@ function renderSettings() {
     </section>
     <section class="card">
       <h3>Backup</h3>
-      <p class="muted small">Your data is stored in this browser only. Export a backup regularly, and import it to move to another device.</p>
+      <p class="muted small">${
+        cloudOn
+          ? "Your log is saved privately to your account and syncs between your devices. Exports are extra copies."
+          : "Your data is stored in this browser only. Export a backup regularly, and import it to move to another device."
+      }</p>
       <div class="row-actions">
         <button class="secondary" data-action="export-json">Export backup (.json)</button>
         <button class="secondary" data-action="export-csv">Export sets (.csv)</button>
-        <label class="button secondary">Import backup<input type="file" accept="application/json,.json" id="import-file" hidden></label>
+        <label class="button secondary">Import file<input type="file" accept="application/json,.json" id="import-file" hidden></label>
+        <button class="secondary" data-action="import-text">Paste backup</button>
       </div>
     </section>
     <section class="card">
@@ -864,15 +1000,6 @@ function renderSettings() {
       <p class="muted small">Replace everything with the original program and logs from the spreadsheet.</p>
       <button class="danger" data-action="reset">Reset to spreadsheet data</button>
     </section>`;
-}
-
-function download(name, text, type) {
-  const url = URL.createObjectURL(new Blob([text], { type }));
-  const a = Object.assign(document.createElement("a"), { href: url, download: name });
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function toCSV() {
@@ -891,35 +1018,43 @@ function toCSV() {
   return rows.map((r) => r.map((v) => (/[",\n]/.test(String(v ?? "")) ? `"${String(v).replace(/"/g, '""')}"` : (v ?? ""))).join(",")).join("\n");
 }
 
-function onSettingsClick(e) {
+async function onSettingsClick(e) {
   const action = e.target.closest("[data-action]")?.dataset.action;
-  if (action === "export-json") download(`lift-backup-${today()}.json`, JSON.stringify(state, null, 1), "application/json");
-  if (action === "export-csv") download(`lift-sets-${today()}.csv`, toCSV(), "text/csv");
-  if (action === "reset" && confirm("Reset all data to the spreadsheet version? Anything logged in the app will be lost.")) {
-    state = freshState();
+  if (action === "export-json") showText("Backup", JSON.stringify(state), `lift-backup-${today()}.json`, "application/json");
+  if (action === "export-csv") showText("All sets (CSV)", toCSV(), `lift-sets-${today()}.csv`, "text/csv");
+  if (action === "import-text") {
+    const r = await ask({ title: "Import backup", message: "Paste the text from Export backup. This replaces all current data.", fields: [{ name: "json", label: "Backup", multiline: true }], ok: "Import", danger: true });
+    if (r?.json) importData(r.json);
+  }
+  if (action === "reset") {
+    const sure = await ask({ title: "Reset to spreadsheet data?", message: "Anything logged in the app will be lost.", ok: "Reset", danger: true });
+    if (!sure) return;
+    state = { ...freshState(), updatedAt: Date.now() };
     persist();
     ui.weekId = null;
     toast("Reset to spreadsheet data");
-    render();
+    route();
+  }
+}
+
+async function importData(text) {
+  try {
+    state = { ...migrate(JSON.parse(text)), updatedAt: Date.now() };
+    persist();
+    ui.weekId = null;
+    toast("Backup imported");
+    route();
+  } catch (err) {
+    ask({ title: "Import failed", message: err instanceof SyntaxError ? "That isn't valid backup text." : err.message, ok: "OK" });
   }
 }
 
 async function onImport(e) {
   const file = e.target.files?.[0];
+  e.target.value = "";
   if (!file) return;
-  try {
-    const data = migrate(JSON.parse(await file.text()));
-    if (!confirm("Replace all current data with this backup?")) return;
-    state = data;
-    persist();
-    ui.weekId = null;
-    toast("Backup imported");
-    render();
-  } catch (err) {
-    alert(`Import failed: ${err.message}`);
-  } finally {
-    e.target.value = "";
-  }
+  const sure = await ask({ title: "Import backup?", message: `Replace all current data with ${file.name}?`, ok: "Import", danger: true });
+  if (sure) importData(await file.text());
 }
 
 function onSettingsSubmit(e) {
@@ -940,24 +1075,26 @@ main.addEventListener("change", (e) => {
     ui.exerciseId = e.target.value;
     drawExerciseChart();
   }
-  if (ui.view === "settings" && e.target.id === "import-file") onImport(e);
+  if (ui.view === "data" && e.target.id === "import-file") onImport(e);
 });
 main.addEventListener("click", (e) => {
   if (ui.view === "workout") onWorkoutClick(e);
   if (ui.view === "program") onProgramClick(e);
-  if (ui.view === "settings") onSettingsClick(e);
+  if (ui.view === "data") onSettingsClick(e);
   if (ui.view === "body") {
     const date = e.target.closest("[data-del]")?.dataset.del;
-    if (date && confirm(`Delete the weigh-in for ${shortDate(date)}?`)) {
+    if (!date) return;
+    ask({ title: `Delete the ${shortDate(date)} weigh-in?`, ok: "Delete", danger: true }).then((sure) => {
+      if (!sure) return;
       state.body.entries = state.body.entries.filter((x) => x.date !== date);
       persist();
       render();
-    }
+    });
   }
 });
 main.addEventListener("submit", (e) => {
   if (ui.view === "body") onBodySubmit(e);
-  if (ui.view === "settings") onSettingsSubmit(e);
+  if (ui.view === "data") onSettingsSubmit(e);
 });
 // Enter in a set input moves to the next input instead of submitting anything.
 main.addEventListener("keydown", (e) => {
@@ -983,8 +1120,77 @@ window.addEventListener("storage", () => {
   render();
 });
 
-if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+if ("serviceWorker" in navigator && location.protocol.startsWith("http") && !window.claude) {
   navigator.serviceWorker.register("sw.js").catch(() => {});
 }
 
+// ------------------------------------------------------------------ cloud sync
+
+let cloudOn = false;
+let pendingRemote = null;
+
+const SYNC_TEXT = {
+  connecting: "Connecting…",
+  local: "Saved on this device",
+  saving: "Saving…",
+  synced: "Synced",
+  error: "Sync failed · saved on this device",
+};
+
+function setSyncStatus(status, detail) {
+  const el = document.getElementById("sync");
+  el.hidden = false;
+  el.dataset.status = status;
+  el.textContent = SYNC_TEXT[status] ?? status;
+  el.title = detail ?? "";
+}
+
+/** Adopt a newer copy saved from another device; push ours if it's newer. */
+function onRemote(remote) {
+  if (!remote) {
+    cloud.push(state, { now: true });
+    return;
+  }
+  const remoteAt = remote.updatedAt ?? 0;
+  const localAt = state.updatedAt ?? 0;
+  if (remoteAt < localAt) cloud.push(state, { now: true });
+  if (remoteAt <= localAt) return;
+  // Don't yank an input out from under someone typing; apply when they leave it.
+  if (main.contains(document.activeElement) && document.activeElement.matches("input, textarea, select")) {
+    pendingRemote = remote;
+    return;
+  }
+  applyRemote(remote);
+}
+
+function applyRemote(remote) {
+  try {
+    state = { ...migrate(remote), updatedAt: remote.updatedAt };
+  } catch {
+    return;
+  }
+  save(state);
+  route();
+}
+
+main.addEventListener("focusout", () => {
+  setTimeout(() => {
+    if (pendingRemote && !main.contains(document.activeElement)) {
+      const r = pendingRemote;
+      pendingRemote = null;
+      if ((r.updatedAt ?? 0) > (state.updatedAt ?? 0)) applyRemote(r);
+    }
+  }, 0);
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") cloud.flushNow();
+});
+
 route();
+cloud
+  .connect({ onRemote, onStatus: setSyncStatus })
+  .then((ok) => {
+    cloudOn = Boolean(ok);
+    if (cloudOn && ui.view === "data") render();
+  })
+  .catch((err) => setSyncStatus("error", err?.message));
