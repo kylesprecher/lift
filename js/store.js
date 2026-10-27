@@ -38,7 +38,14 @@ export function migrate(data) {
   }
   return {
     version: 1,
-    program: { targets: {}, guides: {}, unit: "lb", ...data.program },
+    program: {
+      targets: {},
+      guides: {},
+      unit: "lb",
+      // Installs from before the sheet link existed get the original sheet.
+      sheetId: data.program.id === SEED.program.id ? SEED.program.sheetId : null,
+      ...data.program,
+    },
     logs: data.logs ?? {},
     sessions: data.sessions ?? {},
     body: data.body ?? { startDate: null, startWeight: null, weeklyChangePct: 0, entries: [] },

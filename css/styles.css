@@ -891,6 +891,31 @@ dialog p {
 textarea {
   resize: vertical;
 }
+.import-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+  max-height: 50vh;
+  overflow: auto;
+}
+.import-list ul {
+  margin: 2px 0 0;
+  padding-left: 16px;
+  color: var(--text-2);
+  font-size: 0.9rem;
+}
+.import-list s {
+  color: var(--muted);
+}
+.pill {
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+}
 textarea.export {
   font: 0.75rem/1.4 ui-monospace, "SF Mono", Menlo, monospace;
 }

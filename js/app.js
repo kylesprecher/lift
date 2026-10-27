@@ -3,6 +3,7 @@ import { load, save, freshState, migrate } from "./store.js";
 import { lineChart, columnChart } from "./charts.js";
 import * as cloud from "./cloud.js";
 import * as chime from "./chime.js";
+import * as sheet from "./sheet.js";
 
 let state = load();
 const ui = { view: "workout", weekId: null, dayId: null, exerciseId: null };
@@ -34,7 +35,7 @@ function persist() {
  * In-page replacement for prompt()/confirm() (which hosted pages can't use).
  * Resolves the field values as an object, or null when cancelled.
  */
-function ask({ title, message = "", fields = [], ok = "OK", danger = false }) {
+function ask({ title, message = "", fields = [], ok = "OK", danger = false, info = false }) {
   const dlg = document.getElementById("ask-dialog");
   const form = dlg.querySelector("form");
   form.innerHTML = `
@@ -51,7 +52,7 @@ function ask({ title, message = "", fields = [], ok = "OK", danger = false }) {
       .join("")}
     <div class="dialog-actions">
       <span class="spacer"></span>
-      <button type="button" class="secondary" data-cancel>Cancel</button>
+      ${info ? "" : `<button type="button" class="secondary" data-cancel>Cancel</button>`}
       <button type="submit" class="${danger ? "danger" : "primary"}">${esc(ok)}</button>
     </div>`;
   return new Promise((resolve) => {
@@ -61,7 +62,8 @@ function ask({ title, message = "", fields = [], ok = "OK", danger = false }) {
       resolve(values);
       dlg.close();
     };
-    form.querySelector("[data-cancel]").onclick = () => dlg.close();
+    const cancel = form.querySelector("[data-cancel]");
+    if (cancel) cancel.onclick = () => dlg.close();
     dlg.onclose = () => resolve(null);
     dlg.showModal();
     form.querySelector("input, textarea")?.focus();
@@ -212,6 +214,9 @@ function renderWorkout() {
       }</p>
       ${week.deload ? `<p class="banner">Deload week — lighter weights and about half of last week's reps. Leave plenty in the tank.</p>` : ""}
       ${week.note ? `<p class="banner">${esc(week.note)}</p>` : ""}
+      <div class="row-actions">
+        <button class="ghost" data-action="import-sheet" id="import-sheet">↻ Update targets from sheet</button>
+      </div>
     </section>
 
     <div class="exercises">
@@ -359,6 +364,191 @@ function patchCard(exId) {
   refreshSessionMeta();
 }
 
+// ------------------------------------------------------------------ import from sheet
+
+const FIELD_NAMES = { name: "Name", repRange: "Rep range", sets: "Sets", weight: "Weight", rir: "RIR", reps: "Reps" };
+
+async function importFromSheet() {
+  const week = weekById(ui.weekId);
+  const day = dayById(ui.dayId);
+  const weekNumber = Number(week.label.match(/Week\s+(\d+)/i)?.[1]);
+  if (!Number.isFinite(weekNumber)) {
+    ask({ title: "Can't match this week", message: `“${week.label}” has no week number to look up in the sheet.`, info: true });
+    return;
+  }
+  const btn = document.getElementById("import-sheet");
+  btn.disabled = true;
+  btn.textContent = "Reading sheet…";
+  let result;
+  try {
+    result = await readSheetFromDrive();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "↻ Update targets from sheet";
+  }
+  if (result.text) {
+    previewImport(result.text, week, day, weekNumber);
+    return;
+  }
+  // No Drive access here (or it failed): offer a downloaded CSV instead.
+  pickCSV(week, day, weekNumber, result.error);
+}
+
+/** Export the linked sheet's first tab as CSV through the viewer's Google Drive connector. */
+async function readSheetFromDrive() {
+  const mcp = window.claude?.use ? await window.claude.use("mcp") : null;
+  if (!mcp) return {};
+  const fileId = state.program.sheetId;
+  if (!fileId) return { error: "No spreadsheet is linked yet. Add its link under Data → Spreadsheet." };
+  const input = { fileId, exportMimeType: "text/csv" };
+  const call = () => mcp.callTool("Google Drive", "download_file_content", input, { cache: false });
+  let res;
+  try {
+    res = await call();
+  } catch (err) {
+    // A read is safe to retry once when the platform says so.
+    if (!err?.retryable) return { error: driveError(err) };
+    await new Promise((r) => setTimeout(r, err.retryAfterMs ?? 800 + Math.random() * 700));
+    try {
+      res = await call();
+    } catch (err2) {
+      return { error: driveError(err2) };
+    }
+  }
+  const content = res?.payload && typeof res.payload === "object" ? res.payload.content : null;
+  if (typeof content !== "string") return { error: "Google Drive sent back something unexpected." };
+  try {
+    const bytes = Uint8Array.from(atob(content), (c) => c.charCodeAt(0));
+    return { text: new TextDecoder().decode(bytes).replace(/^\uFEFF/, "") };
+  } catch {
+    return { error: "Google Drive sent back something unexpected." };
+  }
+}
+
+function driveError(err) {
+  switch (err?.code) {
+    case "server_not_connected":
+    case "server_not_found":
+      return "Google Drive isn't connected. Add it in claude.ai Settings → Connectors, then try again.";
+    case "needs_reauth":
+      return "Google Drive needs to be reconnected. Reconnect it in claude.ai Settings → Connectors, then try again.";
+    case "selection_required":
+      return "You have more than one Google Drive connected. Pick one when Claude asks, then try again.";
+    case "approval_required":
+    case "not_in_manifest":
+    case "consent_required":
+      return "Lift needs your permission to read Google Drive. Tap Update again and choose Allow.";
+    case "blocked_by_policy":
+      return "Your organization doesn't allow Lift to use Google Drive.";
+    case "tool_error":
+      return "Google Drive couldn't export the sheet. Check the sheet link under Data → Spreadsheet.";
+    case "server_unavailable":
+      return "Google Drive didn't respond. Try again in a moment.";
+    default:
+      return "Couldn't read the sheet from Google Drive.";
+  }
+}
+
+function pickCSV(week, day, weekNumber, error) {
+  const dlg = document.getElementById("ask-dialog");
+  const form = dlg.querySelector("form");
+  form.innerHTML = `
+    <h2>Update from a CSV file</h2>
+    ${error ? `<p class="banner">${esc(error)}</p>` : ""}
+    <p class="muted">In Google Sheets, open the program tab and choose <b>File → Download → Comma-separated values (.csv)</b>. Then pick that file here.</p>
+    <label class="button secondary">Choose CSV file<input type="file" accept=".csv,text/csv" id="sheet-csv" hidden></label>
+    <div class="dialog-actions"><span class="spacer"></span><button type="button" class="secondary" data-cancel>Cancel</button></div>`;
+  form.onsubmit = (e) => e.preventDefault();
+  form.querySelector("[data-cancel]").onclick = () => dlg.close();
+  form.querySelector("#sheet-csv").onchange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    dlg.close();
+    previewImport(text, week, day, weekNumber);
+  };
+  dlg.onclose = null;
+  dlg.showModal();
+}
+
+function previewImport(text, week, day, weekNumber) {
+  let workout;
+  try {
+    workout = sheet.readWorkout(sheet.parseCSV(text), { weekNumber, dayName: day.name, dayIndex: state.program.days.indexOf(day) });
+  } catch (err) {
+    ask({ title: "Couldn't read the sheet", message: err.message, info: true });
+    return;
+  }
+  const diff = sheet.diffWorkout(day.exercises, state.program.targets[week.id] ?? {}, workout);
+  const changed = diff.filter((d) => d.changes.length);
+  const leftOver = day.exercises.length - workout.exercises.length;
+  if (!changed.length) {
+    toast(`${weekLabel(week)} · ${day.name} already matches the sheet`);
+    return;
+  }
+  const show = (field, v) => (v == null || v === "" ? "—" : field === "weight" ? `${L.fmt(v)} ${unit()}` : esc(v));
+  const dlg = document.getElementById("ask-dialog");
+  const form = dlg.querySelector("form");
+  form.innerHTML = `
+    <h2>Update ${esc(weekLabel(week))} · ${esc(day.name)}</h2>
+    <p class="muted">These targets differ from the sheet. Logged sets aren't changed.</p>
+    <ul class="import-list">
+      ${changed
+        .map(
+          (d) => `<li>
+            <b>${esc(d.sheet.name)}</b>${d.exercise ? "" : ' <span class="pill">New</span>'}
+            <ul>${d.changes
+              .filter((c) => d.exercise || c.field !== "name")
+              .map((c) => `<li>${FIELD_NAMES[c.field]}: ${d.exercise ? `<s>${show(c.field, c.from)}</s> → ` : ""}${show(c.field, c.to)}</li>`)
+              .join("")}</ul>
+          </li>`
+        )
+        .join("")}
+    </ul>
+    ${leftOver > 0 ? `<p class="muted small">${leftOver} exercise${leftOver > 1 ? "s" : ""} in the app aren't in the sheet and will be left as they are.</p>` : ""}
+    <div class="dialog-actions">
+      <span class="spacer"></span>
+      <button type="button" class="secondary" data-cancel>Cancel</button>
+      <button type="submit" class="primary">Apply ${changed.length} update${changed.length > 1 ? "s" : ""}</button>
+    </div>`;
+  form.querySelector("[data-cancel]").onclick = () => dlg.close();
+  dlg.onclose = null;
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    applyImport(week, day, changed);
+    dlg.close();
+  };
+  dlg.showModal();
+}
+
+function applyImport(week, day, changed) {
+  const targets = (state.program.targets[week.id] ??= {});
+  for (const d of changed) {
+    let ex = d.exercise;
+    if (!ex) {
+      ex = { id: uid(`${day.id}e`), name: d.sheet.name };
+      day.exercises.push(ex);
+    }
+    for (const c of d.changes) {
+      if (c.field === "name" || c.field === "repRange") {
+        if (c.to == null) delete ex[c.field];
+        else ex[c.field] = c.to;
+      } else {
+        const t = { ...targets[ex.id] };
+        if (c.to == null) delete t[c.field];
+        else t[c.field] = c.to;
+        targets[ex.id] = t;
+      }
+    }
+    // Sets not started yet are rebuilt from the new targets.
+    const log = state.logs[week.id]?.[ex.id];
+    if (log && !log.sets?.some((s) => s.done) && !log.note) delete state.logs[week.id][ex.id];
+  }
+  persist();
+  render();
+  toast(`Updated ${changed.length} exercise${changed.length > 1 ? "s" : ""} from the sheet`);
+}
+
 function onWorkoutClick(e) {
   if (onRestClick(e)) return;
   const dayBtn = e.target.closest("[data-day]");
@@ -371,6 +561,10 @@ function onWorkoutClick(e) {
   const action = btn.dataset.action;
   const key = L.sessionKey(ui.weekId, ui.dayId);
 
+  if (action === "import-sheet") {
+    importFromSheet();
+    return;
+  }
   if (action === "finish") {
     state.sessions[key] = { completed: true, date: today() };
     persist();
@@ -1094,6 +1288,20 @@ function renderSettings() {
       </form>
     </section>
     <section class="card">
+      <h3>Spreadsheet</h3>
+      <p class="muted small">“Update targets from sheet” on each workout reads this Google Sheet's first tab${
+        state.program.sheetId
+          ? `: <a href="https://docs.google.com/spreadsheets/d/${esc(state.program.sheetId)}/edit" target="_blank" rel="noopener">open the sheet ↗</a>`
+          : "."
+      }</p>
+      <form id="sheet-form" class="goal-form">
+        <label class="field"><span>Sheet link</span><input id="sheet-url" name="sheetUrl" placeholder="https://docs.google.com/spreadsheets/d/…" value="${
+          state.program.sheetId ? esc(`https://docs.google.com/spreadsheets/d/${state.program.sheetId}/edit`) : ""
+        }"></label>
+        <button class="secondary" type="submit">Save link</button>
+      </form>
+    </section>
+    <section class="card">
       <h3>Backup</h3>
       <p class="muted small">${
         cloudOn
@@ -1157,7 +1365,7 @@ async function importData(text) {
     toast("Backup imported");
     route();
   } catch (err) {
-    ask({ title: "Import failed", message: err instanceof SyntaxError ? "That isn't valid backup text." : err.message, ok: "OK" });
+    ask({ title: "Import failed", message: err instanceof SyntaxError ? "That isn't valid backup text." : err.message, info: true });
   }
 }
 
@@ -1170,6 +1378,20 @@ async function onImport(e) {
 }
 
 function onSettingsSubmit(e) {
+  if (e.target.id === "sheet-form") {
+    e.preventDefault();
+    const raw = new FormData(e.target).get("sheetUrl");
+    const id = sheet.sheetIdFromUrl(raw);
+    if (raw.trim() && !id) {
+      ask({ title: "That isn't a Google Sheets link", message: "Paste the sheet's address from your browser, like https://docs.google.com/spreadsheets/d/…", info: true });
+      return;
+    }
+    state.program.sheetId = id;
+    persist();
+    toast(id ? "Sheet link saved" : "Sheet link removed");
+    render();
+    return;
+  }
   if (e.target.id !== "settings-form") return;
   e.preventDefault();
   const data = new FormData(e.target);

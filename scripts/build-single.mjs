@@ -15,7 +15,7 @@ const read = (p) => readFileSync(join(root, p), "utf8");
 const artifact = process.argv.includes("--artifact");
 
 // Dependency order: each module only imports modules listed before it.
-const MODULES = ["seed", "logic", "store", "charts", "cloud", "chime", "app"];
+const MODULES = ["seed", "logic", "store", "charts", "cloud", "chime", "sheet", "app"];
 
 function bundle() {
   const parts = [];

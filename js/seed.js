@@ -6,6 +6,7 @@ export const SEED = {
   "id": "phase1",
   "name": "Phase 1 Hypertrophy (4-day)",
   "unit": "lb",
+  "sheetId": "1dbJNCijsj1daoqF02FUQ4iL1BvpXl4E-LkhwjTSlko8",
   "weeks": [
    {
     "id": "w0",
