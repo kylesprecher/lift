@@ -117,15 +117,58 @@ test("goalWeight matches the sheet's linear goal", () => {
   assert.ok(Math.abs(L.goalWeight(body, L.addDays("2026-09-24", 42)) - 198.016) < 1e-9);
 });
 
-test("weeklyVolume and personalRecords", () => {
+test("weeklyTotals: pounds worked = sets × weight, with week-over-week change", () => {
   const s = seed();
-  const vol = L.weeklyVolume(s);
-  assert.equal(vol.length, 7);
-  assert.ok(vol[2].volume > 0);
-  assert.equal(vol[3].volume, 0);
+  const t = L.weeklyTotals(s);
+  assert.equal(t.length, 7);
+  // Week 0 Day 1 squat: 2 sets at 75 lb -> 150 lb worked.
+  assert.equal(L.poundsWorked(s.logs.w0.d1e1.sets), 150);
+  const w0 = Object.values(s.logs.w0).flatMap((l) => l.sets.filter((x) => x.done));
+  assert.equal(t[0].sets, w0.length);
+  assert.equal(t[0].pounds, w0.reduce((a, x) => a + x.weight, 0));
+  assert.equal(t[0].poundsChange, null, "nothing before week 0");
+  assert.equal(t[1].poundsChange, (t[1].pounds - t[0].pounds) / t[0].pounds);
+  assert.equal(t[1].setsChange, (t[1].sets - t[0].sets) / t[0].sets);
+  assert.equal(t[3].sets, 0);
+  assert.equal(t[3].poundsChange, null, "an empty week isn't a −100% drop");
+  assert.equal(t[4].poundsChange, null, "no change from an empty week");
+  assert.equal(L.pctChange(110, 100), 0.1);
+  assert.equal(L.pctChange(5, 0), null);
+});
+
+test("repsText and sheetPasteBlock", () => {
+  const log = { sets: [{ weight: 85, reps: 9, done: true }, { weight: 85, reps: 8, done: true }, { weight: 85, reps: 10, done: false }] };
+  assert.equal(L.repsText(log), "9,8");
+  assert.equal(L.repsText(undefined), "");
+  const week = { id: "w3", sheetRepsCol: "U" };
+  const day = { exercises: [
+    { id: "a", name: "Squat", sheetRow: 9 },
+    { id: "b", name: "SLDL", sheetRow: 10 },
+    { id: "c", name: "Curls", sheetRow: 12 },
+    { id: "d", name: "New thing" },
+  ] };
+  const block = L.sheetPasteBlock(week, day, { a: log, c: { sets: [{ weight: 40, reps: 12, done: true }] } });
+  assert.equal(block.cell, "U9");
+  assert.equal(block.text, "9,8\n\n\n12", "blank lines keep rows aligned");
+  assert.deepEqual(block.missing, ["New thing"]);
+});
+
+test("personalRecords", () => {
+  const s = seed();
   const prs = L.personalRecords(s);
   assert.ok(prs.length > 0);
   assert.ok(prs[0].e1rm >= prs.at(-1).e1rm);
+});
+
+test("older saved data gets sheet rows and reps columns", async () => {
+  const { migrate } = await import("../js/store.js");
+  const old = seed();
+  for (const w of old.program.weeks) delete w.sheetRepsCol;
+  for (const d of old.program.days) for (const ex of d.exercises) delete ex.sheetRow;
+  const m = migrate(old);
+  assert.equal(m.program.weeks.find((w) => w.id === "w3").sheetRepsCol, "U");
+  assert.equal(m.program.days[1].exercises[0].sheetRow, 17);
+  assert.equal(m.program.days[3].exercises[4].sheetRow, 38);
 });
 
 test("rest timer defaults to 3 minutes unless changed on the timer", async () => {

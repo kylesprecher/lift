@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseCSV, sheetIdFromUrl, findWeekColumns, readWorkout, diffWorkout } from "../js/sheet.js";
+import { parseCSV, sheetIdFromUrl, findWeekColumns, readWorkout, diffWorkout, columnLetter } from "../js/sheet.js";
 
 // Same layout as the program tab: guide rows, week headers on one row, field
 // labels under them (Week 0's labels sit on the "Day N" row), then day blocks.
@@ -24,6 +24,10 @@ test("parseCSV handles quotes and CRLF", () => {
   assert.deepEqual(rows, [["a", "b,c", 'say "hi"'], ["1", "", "3"]]);
 });
 
+test("columnLetter", () => {
+  assert.deepEqual([0, 5, 25, 26, 30, 34].map(columnLetter), ["A", "F", "Z", "AA", "AE", "AI"]);
+});
+
 test("sheetIdFromUrl", () => {
   const id = "1dbJNCijsj1daoqF02FUQ4iL1BvpXl4E-LkhwjTSlko8";
   assert.equal(sheetIdFromUrl(`https://docs.google.com/spreadsheets/d/${id}/edit?usp=sharing`), id);
@@ -33,8 +37,8 @@ test("sheetIdFromUrl", () => {
 
 test("findWeekColumns reads the header labels", () => {
   const weeks = findWeekColumns(parseCSV(CSV));
-  assert.deepEqual(weeks.get(0), { sets: 2, rir: 3, weight: 4 });
-  assert.deepEqual(weeks.get(1), { sets: 7, weight: 8, rir: 9 });
+  assert.deepEqual(weeks.get(0), { sets: 2, rir: 3, weight: 4, actual: 5 });
+  assert.deepEqual(weeks.get(1), { sets: 7, weight: 8, rir: 9, actual: 10 });
   assert.deepEqual(weeks.get(6), { sets: 12, weight: 13, reps: 14 });
 });
 
@@ -42,7 +46,9 @@ test("readWorkout extracts one week/day", () => {
   const rows = parseCSV(CSV);
   const w1 = readWorkout(rows, { weekNumber: 1, dayName: "Day 1", dayIndex: 0 });
   assert.equal(w1.focus, "Legs");
-  assert.deepEqual(w1.exercises[0], { name: "Smith Machine Squat", repRange: "5-10", target: { sets: 3, weight: 75, rir: "3/fail", reps: undefined } });
+  assert.deepEqual(w1.exercises[0], { name: "Smith Machine Squat", repRange: "5-10", target: { sets: 3, weight: 75, rir: "3/fail", reps: undefined }, row: 5 });
+  assert.equal(w1.repsCol, "K");
+  assert.equal(readWorkout(rows, { weekNumber: 6, dayName: "Day 1" }).repsCol, "O", "deload uses its Reps column");
   // Week 1 has no RIR blank here, but Cable Crunch's actual reps are blank; targets unaffected.
   assert.deepEqual(w1.exercises[1].target, { sets: 2, weight: 40, rir: "2/fail", reps: undefined });
   const w0 = readWorkout(rows, { weekNumber: 0, dayName: "Day 1", dayIndex: 0 });

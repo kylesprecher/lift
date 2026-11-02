@@ -65,6 +65,48 @@
   --partial-bg: #3a2f12;
 }
 
+/* Appearance chosen in the app (header button or Data tab). Comes after the
+   system/host rules so it wins over both. */
+:root[data-lift-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #262624;
+  --text: #f0efec;
+  --text-2: #c3c2b7;
+  --muted: #898781;
+  --border: rgba(255, 255, 255, 0.1);
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --accent: #3987e5;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --good-text: #0ca30c;
+  --warn-bg: #3a2f12;
+  --done-bg: #16301a;
+  --partial-bg: #3a2f12;
+}
+:root[data-lift-theme="light"] {
+  color-scheme: light;
+  --bg: #f9f9f7;
+  --surface: #fcfcfb;
+  --surface-2: #f0efec;
+  --text: #0b0b0b;
+  --text-2: #52514e;
+  --muted: #898781;
+  --border: rgba(11, 11, 11, 0.1);
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --accent: #2a78d6;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --good-text: #006300;
+  --warn-bg: #fff4d6;
+  --done-bg: #e8f4e8;
+  --partial-bg: #fdf3dc;
+}
+
+
 * {
   box-sizing: border-box;
 }
@@ -120,6 +162,21 @@ a {
   padding-block: 12px 8px;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.bar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.theme-toggle {
+  min-height: 36px;
+  min-width: 36px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
+  font-size: 1rem;
 }
 .sync {
   font-size: 0.75rem;
@@ -804,6 +861,17 @@ table.data td small {
 .chart .bar {
   stroke: none;
 }
+.chart .bar.partial {
+  opacity: 0.45;
+}
+.chart .cap {
+  fill: var(--text-2);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+.tooltip .tip-detail {
+  color: var(--text-2);
+}
 .tooltip {
   position: absolute;
   top: 0;
@@ -1020,4 +1088,13 @@ table.targets input {
   * {
     transition: none !important;
   }
+}
+
+.wow th,
+.wow td {
+  padding-inline: 6px;
+}
+.summary td.reps {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }

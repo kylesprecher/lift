@@ -124,7 +124,9 @@ export function lineChart(container, opts) {
 
 /**
  * Single-series column chart.
- * opts.bars: [{label, value, title?}]
+ * opts.bars: [{label, value, title?, cap?, detail?, partial?}]
+ *   cap: short text drawn above the bar (e.g. "+12%"), skipped when bars are too narrow
+ *   detail: extra tooltip line; partial: drawn lighter (e.g. a week still in progress)
  */
 export function columnChart(container, opts) {
   const { bars, color = "var(--series-1)", yFormat = compact, height = 200 } = opts;
@@ -135,7 +137,7 @@ export function columnChart(container, opts) {
     return;
   }
   const width = Math.max(280, container.clientWidth || 600);
-  const m = { top: 18, right: 8, bottom: 26, left: 44 };
+  const m = { top: 24, right: 8, bottom: 26, left: 44 };
   const ticks = niceTicks(0, Math.max(...bars.map((b) => b.value)));
   const yMax = ticks[ticks.length - 1];
   const band = (width - m.left - m.right) / bars.length;
@@ -164,11 +166,17 @@ export function columnChart(container, opts) {
       const x1 = cx + barW / 2;
       // Rounded data end, square at the baseline.
       const d = `M${x0},${base}V${top + r}Q${x0},${top} ${x0 + r},${top}H${x1 - r}Q${x1},${top} ${x1},${top + r}V${base}Z`;
-      el("path", { d, class: "bar", style: `fill:${color}` }, svg);
+      el("path", { d, class: `bar${b.partial ? " partial" : ""}`, style: `fill:${color}` }, svg);
+      if (b.cap && band >= 34) {
+        const cap = el("text", { x: cx, y: top - 6, class: "cap", "text-anchor": "middle" }, svg);
+        cap.textContent = b.cap;
+      }
     }
     const hit = el("rect", { x: cx - band / 2, y: m.top, width: band, height: height - m.top - m.bottom, class: "overlay" }, svg);
     const show = () => {
-      tip.innerHTML = `<div class="tip-title">${b.title ?? b.label}</div><div><b>${yFormat(b.value)}</b></div>`;
+      tip.innerHTML = `<div class="tip-title">${b.title ?? b.label}</div><div><b>${yFormat(b.value)}</b></div>${
+        b.detail ? `<div class="tip-detail">${b.detail}</div>` : ""
+      }`;
       tip.hidden = false;
       const box = svg.getBoundingClientRect();
       tip.style.left = `${Math.min(Math.max((cx / width) * box.width, 70), box.width - 70)}px`;

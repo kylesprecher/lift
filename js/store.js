@@ -31,11 +31,23 @@ export function save(state) {
   }
 }
 
+/** Fill in sheet rows/columns (for copying reps back) on data saved before they existed. */
+function addSheetPositions(program) {
+  for (const w of program.weeks) {
+    w.sheetRepsCol ??= SEED.program.weeks.find((s) => s.id === w.id)?.sheetRepsCol;
+  }
+  const seedRows = new Map(SEED.program.days.flatMap((d) => d.exercises.map((ex) => [ex.id, ex.sheetRow])));
+  for (const d of program.days) {
+    for (const ex of d.exercises) ex.sheetRow ??= seedRows.get(ex.id);
+  }
+}
+
 /** Validate and normalise imported / stored data. Throws on unusable input. */
 export function migrate(data) {
   if (!data || typeof data !== "object" || !data.program?.weeks || !data.program?.days) {
     throw new Error("That file doesn't look like a Lift backup.");
   }
+  if (data.program.id === SEED.program.id) addSheetPositions(data.program);
   return {
     version: 1,
     program: {

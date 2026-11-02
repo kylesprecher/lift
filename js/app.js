@@ -166,7 +166,42 @@ function openSession(weekId, dayId) {
   go("#workout");
 }
 
+// ------------------------------------------------------------------ appearance
+
+/** Is the page showing dark colors right now (app choice, then host, then system)? */
+function isDark() {
+  const choice = state.settings.theme;
+  if (choice === "dark" || choice === "light") return choice === "dark";
+  const host = document.documentElement.dataset.theme;
+  if (host === "dark" || host === "light") return host === "dark";
+  return matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+function applyTheme() {
+  const choice = state.settings.theme;
+  const root = document.documentElement;
+  if (choice === "dark" || choice === "light") root.dataset.liftTheme = choice;
+  else delete root.dataset.liftTheme;
+  const dark = isDark();
+  const btn = document.getElementById("theme-toggle");
+  btn.textContent = dark ? "☀" : "☾";
+  btn.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
+  btn.title = btn.getAttribute("aria-label");
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#0d0d0d" : "#f9f9f7");
+}
+
+document.getElementById("theme-toggle").addEventListener("click", () => {
+  state.settings.theme = isDark() ? "light" : "dark";
+  persist();
+  applyTheme();
+  if (ui.view === "data") render();
+});
+// Keep the button's icon right when the system or Claude's theme changes.
+matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", applyTheme);
+new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
 function render() {
+  applyTheme();
   const views = { workout: renderWorkout, program: renderProgram, progress: renderProgress, body: renderBody, data: renderSettings };
   views[ui.view]();
   main.focus({ preventScroll: true });
@@ -222,6 +257,8 @@ function renderWorkout() {
     <div class="exercises">
       ${day.exercises.map((ex) => exerciseCard(week, ex)).join("") || `<p class="empty">No exercises on this day yet — add some from the Program tab.</p>`}
     </div>
+
+    ${summaryCard(week, day)}
 
     <div class="session-actions">
       ${
@@ -312,7 +349,72 @@ function refreshCard(exId) {
   refreshSessionMeta();
 }
 
+// ------------------------------------------------------------------ summary for the sheet
+
+/** Weight(s) of the completed sets: "85" or "85/80" when they differ. */
+function weightsText(log) {
+  const ws = [...new Set(L.performedSets(log).map((s) => Number(s.weight) || 0))];
+  return ws.length ? `${ws.map((w) => L.fmt(w)).join("/")} ${unit()}` : "";
+}
+
+function summaryCard(week, day) {
+  const logs = state.logs[week.id] ?? {};
+  const block = L.sheetPasteBlock(week, day, logs);
+  const any = day.exercises.some((ex) => L.performedSets(logs[ex.id]).length);
+  return `
+    <section class="card summary" id="summary">
+      <h3>Summary for your sheet</h3>
+      <div class="table-scroll">
+        <table class="data">
+          <thead><tr><th>Exercise</th><th class="num">Weight</th><th>Reps</th></tr></thead>
+          <tbody>${day.exercises
+            .map((ex) => {
+              const reps = L.repsText(logs[ex.id]);
+              return `<tr><td class="wrap">${esc(ex.name)}</td><td class="num">${esc(weightsText(logs[ex.id])) || '<span class="muted">—</span>'}</td><td class="reps">${
+                reps ? esc(reps) : '<span class="muted">—</span>'
+              }</td></tr>`;
+            })
+            .join("")}</tbody>
+        </table>
+      </div>
+      ${
+        block.cell
+          ? `<p class="muted small">In the sheet, click cell <b>${block.cell}</b> (${esc(week.label)} · ${week.deload ? "Reps" : "Actual Reps"}) and paste. Each exercise lands on its own row.</p>`
+          : `<p class="muted small">Click the first exercise's Actual Reps cell for ${esc(week.label)} in the sheet and paste.</p>`
+      }
+      ${block.missing.length ? `<p class="muted small">Not in the sheet, so not copied: ${esc(block.missing.join(", "))}.</p>` : ""}
+      <div class="row-actions">
+        <button class="primary" data-action="copy-reps" ${any ? "" : "disabled"}>Copy reps for sheet</button>
+        <button class="secondary" data-action="copy-summary" ${any ? "" : "disabled"}>Copy full summary</button>
+      </div>
+    </section>`;
+}
+
+function summaryText(week, day) {
+  const logs = state.logs[week.id] ?? {};
+  const lines = day.exercises
+    .filter((ex) => L.performedSets(logs[ex.id]).length)
+    .map((ex) => `${ex.name}: ${weightsText(logs[ex.id])} × ${L.repsText(logs[ex.id])}`);
+  return [`${weekLabel(week)} · ${dayLabel(day)}`, ...lines].join("\n");
+}
+
+async function copyText(text, what) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(`${what} copied`);
+  } catch {
+    // Clipboard refused (some app views): show the text to copy by hand.
+    showText(what, text, "lift-summary.txt", "text/plain");
+  }
+}
+
+function refreshSummary() {
+  const card = main.querySelector("#summary");
+  if (card) card.outerHTML = summaryCard(weekById(ui.weekId), dayById(ui.dayId));
+}
+
 function refreshSessionMeta() {
+  refreshSummary();
   const prog = L.sessionProgress(state, ui.weekId, ui.dayId);
   main.querySelector(".meter span").style.width = `${Math.round(prog.pct * 100)}%`;
   const session = state.sessions[L.sessionKey(ui.weekId, ui.dayId)];
@@ -483,6 +585,10 @@ function previewImport(text, week, day, weekNumber) {
   const changed = diff.filter((d) => d.changes.length);
   const leftOver = day.exercises.length - workout.exercises.length;
   if (!changed.length) {
+    if (syncSheetPositions(week, day, workout)) {
+      persist();
+      render();
+    }
     toast(`${weekLabel(week)} · ${day.name} already matches the sheet`);
     return;
   }
@@ -516,9 +622,29 @@ function previewImport(text, week, day, weekNumber) {
   form.onsubmit = (e) => {
     e.preventDefault();
     applyImport(week, day, changed);
+    syncSheetPositions(week, day, workout);
+    persist();
+    render();
     dlg.close();
   };
   dlg.showModal();
+}
+
+/** Remember where this day's rows and this week's reps column are in the sheet. Returns true if anything moved. */
+function syncSheetPositions(week, day, workout) {
+  let moved = false;
+  workout.exercises.forEach((e, i) => {
+    const ex = day.exercises[i];
+    if (ex && ex.sheetRow !== e.row) {
+      ex.sheetRow = e.row;
+      moved = true;
+    }
+  });
+  if (workout.repsCol && week.sheetRepsCol !== workout.repsCol) {
+    week.sheetRepsCol = workout.repsCol;
+    moved = true;
+  }
+  return moved;
 }
 
 function applyImport(week, day, changed) {
@@ -563,6 +689,13 @@ function onWorkoutClick(e) {
 
   if (action === "import-sheet") {
     importFromSheet();
+    return;
+  }
+  if (action === "copy-reps" || action === "copy-summary") {
+    const week = weekById(ui.weekId);
+    const day = dayById(ui.dayId);
+    if (action === "copy-reps") copyText(L.sheetPasteBlock(week, day, state.logs[week.id]).text, "Reps");
+    else copyText(summaryText(week, day), "Summary");
     return;
   }
   if (action === "finish") {
@@ -1020,13 +1153,8 @@ function renderProgress() {
   const p = state.program;
   const overall = L.programProgress(state);
   const next = L.nextSession(state);
-  const volumes = L.weeklyVolume(state);
-  const lastIdx = volumes.map((v) => v.volume > 0).lastIndexOf(true);
-  const lastVol = volumes[lastIdx];
-  const prevVol = volumes[lastIdx - 1];
-  // Only compare finished weeks; a week in progress would always look like a drop.
-  const lastWeekDone = lastVol && p.days.every((d) => L.isSessionComplete(state, lastVol.week.id, d.id));
-  const delta = lastWeekDone && prevVol?.volume ? (lastVol.volume - prevVol.volume) / prevVol.volume : null;
+  const totals = L.weeklyTotals(state);
+  const latest = totals.filter((t) => t.sets > 0).at(-1);
   const prs = L.personalRecords(state);
   const exercises = p.days.flatMap((d) => d.exercises.map((ex) => ({ day: d, ex })));
   if (!exercises.some((x) => x.ex.id === ui.exerciseId)) ui.exerciseId = exercises[0]?.ex.id;
@@ -1046,15 +1174,14 @@ function renderProgress() {
         <span class="tile-sub">${next ? esc(next.day.focus ?? "") : "Program complete"}</span>
       </div>
       <div class="tile">
-        <span class="tile-label">Volume${lastVol ? ` · ${esc(lastVol.week.label)}` : ""}</span>
-        <span class="tile-value">${lastVol ? `${Math.round(lastVol.volume).toLocaleString()}` : "–"}</span>
-        <span class="tile-sub">${
-          delta != null
-            ? `<span class="${delta >= 0 ? "up" : "down"}">${delta >= 0 ? "▲" : "▼"} ${Math.abs(Math.round(delta * 100))}%</span> vs ${esc(prevVol.week.label)}`
-            : lastVol && !lastWeekDone
-              ? `so far${prevVol?.volume ? ` · ${esc(prevVol.week.label)}: ${Math.round(prevVol.volume).toLocaleString()}` : ""}`
-              : `${unit()} × reps`
-        }</span>
+        <span class="tile-label">Pounds worked${latest ? ` · ${esc(latest.week.label)}` : ""}</span>
+        <span class="tile-value">${latest ? Math.round(latest.pounds).toLocaleString() : "–"}</span>
+        <span class="tile-sub">${latest ? `${changeHTML(latest.poundsChange)}${latest.complete ? "" : " · in progress"}` : "sets × weight"}</span>
+      </div>
+      <div class="tile">
+        <span class="tile-label">Sets${latest ? ` · ${esc(latest.week.label)}` : ""}</span>
+        <span class="tile-value">${latest ? latest.sets : "–"}</span>
+        <span class="tile-sub">${latest ? `${changeHTML(latest.setsChange)}${latest.complete ? "" : " · in progress"}` : "completed sets"}</span>
       </div>
     </section>
 
@@ -1081,9 +1208,33 @@ function renderProgress() {
     </section>
 
     <section class="card">
-      <h3>Weekly volume</h3>
-      <p class="muted small">Total weight × reps across all logged sets.</p>
-      <div id="volume-chart"></div>
+      <h3>Pounds worked per week</h3>
+      <p class="muted small">Sets × weight, added up over every exercise. Labels show the change from the week before; lighter bars are weeks still in progress.</p>
+      <div id="pounds-chart"></div>
+    </section>
+
+    <section class="card">
+      <h3>Sets per week</h3>
+      <p class="muted small">Completed sets across every exercise.</p>
+      <div id="sets-chart"></div>
+    </section>
+
+    <section class="card">
+      <h3>Week over week</h3>
+      <div class="table-scroll">
+        <table class="data wow">
+          <thead><tr><th>Week</th><th class="num">Lbs</th><th class="num">+/−</th><th class="num">Sets</th><th class="num">+/−</th></tr></thead>
+          <tbody>${totals
+            .map(
+              (t) => `<tr${t.sets ? "" : ' class="muted"'}><td>${esc(t.week.label)}${t.week.deload ? "<small>deload</small>" : ""}${t.sets && !t.complete ? "<small>in progress</small>" : ""}</td>
+                <td class="num">${t.sets ? Math.round(t.pounds).toLocaleString() : "—"}</td>
+                <td class="num">${t.sets ? changeHTML(t.poundsChange, false) : ""}</td>
+                <td class="num">${t.sets || "—"}</td>
+                <td class="num">${t.sets ? changeHTML(t.setsChange, false) : ""}</td></tr>`
+            )
+            .join("")}</tbody>
+        </table>
+      </div>
     </section>
 
     <section class="card">
@@ -1102,11 +1253,39 @@ function renderProgress() {
     </section>`;
 
   drawExerciseChart();
-  columnChart(main.querySelector("#volume-chart"), {
-    label: "Weekly training volume",
-    bars: volumes.map((v) => ({ label: v.week.label.replace("Week ", "W"), title: weekLabel(v.week), value: v.volume })),
+  const bars = (field, changeField) =>
+    totals.map((t) => ({
+      label: t.week.label.replace("Week ", "W"),
+      title: `${weekLabel(t.week)}${t.sets && !t.complete ? " (in progress)" : ""}`,
+      value: t[field],
+      partial: t.sets > 0 && !t.complete,
+      cap: t[changeField] == null ? "" : pctText(t[changeField]),
+      detail: t[changeField] == null ? "" : `${pctText(t[changeField])} vs week before`,
+    }));
+  columnChart(main.querySelector("#pounds-chart"), {
+    label: "Pounds worked per week",
+    bars: bars("pounds", "poundsChange"),
     yFormat: (y) => `${Math.round(y).toLocaleString()} ${unit()}`,
   });
+  columnChart(main.querySelector("#sets-chart"), {
+    label: "Sets per week",
+    bars: bars("sets", "setsChange"),
+    color: "var(--series-2)",
+    yFormat: (y) => `${y} sets`,
+  });
+}
+
+/** "+12%" / "−8%" / "0%". */
+function pctText(change) {
+  const pct = Math.round(change * 100);
+  return pct > 0 ? `+${pct}%` : pct < 0 ? `−${Math.abs(pct)}%` : "0%";
+}
+
+function changeHTML(change, arrows = true) {
+  if (change == null) return '<span class="muted">—</span>';
+  const cls = change > 0 ? "up" : change < 0 ? "down" : "";
+  const arrow = !arrows ? "" : change > 0 ? "▲ " : change < 0 ? "▼ " : "";
+  return `<span class="${cls}">${arrow}${pctText(change)}</span>`;
 }
 
 function drawExerciseChart() {
@@ -1126,7 +1305,7 @@ function drawExerciseChart() {
     yFormat: (y) => `${L.fmt(y)} ${unit()}`,
   });
   main.querySelector("#exercise-table").innerHTML = `
-    <thead><tr><th>Week</th><th>Target</th><th>Logged</th><th class="num">Est. 1RM</th><th class="num">Volume</th></tr></thead>
+    <thead><tr><th>Week</th><th>Target</th><th>Logged</th><th class="num">Est. 1RM</th><th class="num">Lbs worked</th></tr></thead>
     <tbody>${history
       .map(({ week, target: t, summary }) => {
         const log = getLog(week.id, exId);
@@ -1134,7 +1313,7 @@ function drawExerciseChart() {
           <td>${t.sets ?? "–"} × ${t.weight != null ? L.fmt(t.weight) : "–"}${t.rir ? ` · ${esc(t.rir)}` : ""}</td>
           <td>${summary ? esc(L.formatLog(log)) : '<span class="muted">—</span>'}</td>
           <td class="num">${summary ? L.fmt(summary.best1RM) : ""}</td>
-          <td class="num">${summary ? Math.round(summary.volume).toLocaleString() : ""}</td></tr>`;
+          <td class="num">${summary ? Math.round(summary.pounds).toLocaleString() : ""}</td></tr>`;
       })
       .join("")}</tbody>`;
 }
@@ -1280,6 +1459,15 @@ function renderSettings() {
     <section class="card">
       <h3>Workout</h3>
       <form id="settings-form" class="goal-form">
+        <label class="field"><span>Appearance</span>
+          <select id="theme-select" name="theme">${[
+            ["system", "Match my device"],
+            ["light", "Light"],
+            ["dark", "Dark"],
+          ]
+            .map(([v, label]) => `<option value="${v}" ${(state.settings.theme ?? "system") === v ? "selected" : ""}>${label}</option>`)
+            .join("")}</select>
+        </label>
         <label class="field check-field"><input type="checkbox" id="auto-rest" name="autoRest" ${state.settings.autoRest !== false ? "checked" : ""}><span>Start the rest timer when I tick a set</span></label>
         <label class="field"><span>Units</span>
           <select name="unit">${["lb", "kg"].map((u) => `<option ${u === unit() ? "selected" : ""}>${u}</option>`).join("")}</select>
@@ -1396,6 +1584,8 @@ function onSettingsSubmit(e) {
   e.preventDefault();
   const data = new FormData(e.target);
   state.settings.autoRest = data.get("autoRest") === "on";
+  state.settings.theme = data.get("theme");
+  applyTheme();
   state.program.unit = data.get("unit");
   persist();
   toast("Settings saved");
@@ -1454,7 +1644,8 @@ window.addEventListener("storage", () => {
   render();
 });
 
-if ("serviceWorker" in navigator && location.protocol.startsWith("http") && !window.claude) {
+// Offline cache for the multi-file version only (the single-file build has no sw.js or manifest).
+if ("serviceWorker" in navigator && location.protocol.startsWith("http") && !window.claude && document.querySelector('link[rel="manifest"]')) {
   navigator.serviceWorker.register("sw.js").catch(() => {});
 }
 

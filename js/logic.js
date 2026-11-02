@@ -43,8 +43,42 @@ export function summarizeLog(log) {
     topWeight,
     best1RM,
     volume: setVolume(sets),
+    pounds: poundsWorked(sets),
     reps: sets.map((s) => Number(s.reps) || 0),
   };
+}
+
+/** Pounds worked: each completed set counts its weight once (sets × weight). */
+export function poundsWorked(sets) {
+  return sets.reduce((sum, s) => sum + (Number(s.weight) || 0), 0);
+}
+
+/** Reps of the completed sets as the sheet writes them: "9,9,9,8" (no spaces). */
+export function repsText(log) {
+  return performedSets(log)
+    .map((s) => Number(s.reps) || 0)
+    .join(",");
+}
+
+/**
+ * Text to paste into the sheet's Actual Reps column for one workout: one line
+ * per sheet row from the day's first exercise row down, blank where nothing
+ * was logged. Exercises without a known sheet row are listed in `missing`.
+ */
+export function sheetPasteBlock(week, day, weekLogs = {}) {
+  const placed = day.exercises.filter((ex) => Number.isInteger(ex.sheetRow));
+  const missing = day.exercises.filter((ex) => !Number.isInteger(ex.sheetRow)).map((ex) => ex.name);
+  if (!placed.length) return { text: "", cell: null, missing };
+  const start = Math.min(...placed.map((ex) => ex.sheetRow));
+  const end = Math.max(...placed.map((ex) => ex.sheetRow));
+  const lines = Array(end - start + 1).fill("");
+  for (const ex of placed) lines[ex.sheetRow - start] = repsText(weekLogs[ex.id]);
+  return { text: lines.join("\n"), cell: week.sheetRepsCol ? `${week.sheetRepsCol}${start}` : null, startRow: start, missing };
+}
+
+/** Fractional change from `prev` to `curr`; null when there's nothing to compare against. */
+export function pctChange(curr, prev) {
+  return prev > 0 ? (curr - prev) / prev : null;
 }
 
 /** "75 × 9, 9, 9" (or "75 × 9, 80 × 8" when weights differ). */
@@ -168,12 +202,33 @@ export function exerciseHistory(state, exerciseId) {
   });
 }
 
-/** Total volume lifted per week across the whole program. */
-export function weeklyVolume(state) {
+/**
+ * Per-week totals across every exercise: pounds worked (sets × weight),
+ * completed sets, and the change from the week before (null for the first
+ * week, an empty week, or when the week before has nothing logged).
+ */
+export function weeklyTotals(state) {
+  let prev = null;
   return state.program.weeks.map((week) => {
-    let volume = 0;
-    for (const log of Object.values(state.logs?.[week.id] ?? {})) volume += setVolume(performedSets(log));
-    return { week, volume };
+    let pounds = 0;
+    let sets = 0;
+    for (const log of Object.values(state.logs?.[week.id] ?? {})) {
+      const done = performedSets(log);
+      pounds += poundsWorked(done);
+      sets += done.length;
+    }
+    const complete = state.program.days.every((d) => isSessionComplete(state, week.id, d.id));
+    const row = {
+      week,
+      pounds,
+      sets,
+      complete,
+      // A week with nothing logged yet has no change to report.
+      poundsChange: prev && sets ? pctChange(pounds, prev.pounds) : null,
+      setsChange: prev && sets ? pctChange(sets, prev.sets) : null,
+    };
+    prev = row;
+    return row;
   });
 }
 

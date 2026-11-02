@@ -11,32 +11,39 @@ export const SEED = {
    {
     "id": "w0",
     "label": "Week 0",
-    "note": "Intro week"
+    "note": "Intro week",
+    "sheetRepsCol": "F"
    },
    {
     "id": "w1",
-    "label": "Week 1"
+    "label": "Week 1",
+    "sheetRepsCol": "K"
    },
    {
     "id": "w2",
-    "label": "Week 2"
+    "label": "Week 2",
+    "sheetRepsCol": "P"
    },
    {
     "id": "w3",
-    "label": "Week 3"
+    "label": "Week 3",
+    "sheetRepsCol": "U"
    },
    {
     "id": "w4",
-    "label": "Week 4"
+    "label": "Week 4",
+    "sheetRepsCol": "Z"
    },
    {
     "id": "w5",
-    "label": "Week 5"
+    "label": "Week 5",
+    "sheetRepsCol": "AE"
    },
    {
     "id": "w6",
     "label": "Week 6",
-    "deload": true
+    "deload": true,
+    "sheetRepsCol": "AI"
    }
   ],
   "days": [
@@ -49,30 +56,35 @@ export const SEED = {
       "id": "d1e1",
       "name": "Smith Machine Squat",
       "repRange": "5-10",
-      "video": "https://www.youtube.com/watch?v=-eO_VydErV0&list=PLyqKj7LwU2RuAg-us4mzap6izNcc1fuRW&index=1&pp=iAQB"
+      "video": "https://www.youtube.com/watch?v=-eO_VydErV0&list=PLyqKj7LwU2RuAg-us4mzap6izNcc1fuRW&index=1&pp=iAQB",
+      "sheetRow": 9
      },
      {
       "id": "d1e2",
       "name": "Smith Machine SLDL",
-      "repRange": "5-10"
+      "repRange": "5-10",
+      "sheetRow": 10
      },
      {
       "id": "d1e3",
       "name": "Cable Curls",
       "repRange": "7-12",
-      "video": "https://www.youtube.com/watch?v=yuozln3CC94&list=PLyqKj7LwU2Rt1cwOsHwdXa2TiRzjA6uoB&index=4&pp=iAQB"
+      "video": "https://www.youtube.com/watch?v=yuozln3CC94&list=PLyqKj7LwU2Rt1cwOsHwdXa2TiRzjA6uoB&index=4&pp=iAQB",
+      "sheetRow": 11
      },
      {
       "id": "d1e4",
       "name": "Cable Upright Row",
       "repRange": "7-12",
-      "video": "https://www.youtube.com/watch?v=qr3ziolhjvQ&list=PLyqKj7LwU2RuNVJBl0CtfZdxQ99IhKCcu&index=3&pp=iAQB"
+      "video": "https://www.youtube.com/watch?v=qr3ziolhjvQ&list=PLyqKj7LwU2RuNVJBl0CtfZdxQ99IhKCcu&index=3&pp=iAQB",
+      "sheetRow": 12
      },
      {
       "id": "d1e5",
       "name": "Cable Crunch",
       "repRange": "8-15",
-      "video": "https://www.youtube.com/watch?v=6GMKPQVERzw&list=PLyqKj7LwU2RvTgEW_QlCCjtIL5d_KP_-I&index=6"
+      "video": "https://www.youtube.com/watch?v=6GMKPQVERzw&list=PLyqKj7LwU2RvTgEW_QlCCjtIL5d_KP_-I&index=6",
+      "sheetRow": 13
      }
     ]
    },
@@ -86,31 +98,36 @@ export const SEED = {
       "name": "Smith Machine Bench Press",
       "repRange": "5-10",
       "video": "https://www.youtube.com/watch?v=O5viuEPDXKY&list=PLyqKj7LwU2RuyZwWCIiDHuFZGN11QW3Ff&index=27&pp=iAQB",
-      "note": "Kept light for left shoulder injury"
+      "note": "Kept light for left shoulder injury",
+      "sheetRow": 17
      },
      {
       "id": "d2e2",
       "name": "DB Incline Bench",
       "repRange": "5-10",
       "video": "https://www.youtube.com/watch?v=5CECBjd7HLQ&list=PLyqKj7LwU2RuyZwWCIiDHuFZGN11QW3Ff&index=13&pp=iAQB",
-      "note": "Shoulder injury"
+      "note": "Shoulder injury",
+      "sheetRow": 18
      },
      {
       "id": "d2e3",
       "name": "Lat Pulldowns",
-      "repRange": "7-12"
+      "repRange": "7-12",
+      "sheetRow": 19
      },
      {
       "id": "d2e4",
       "name": "Seated Cable Row",
       "repRange": "7-12",
-      "video": "https://www.youtube.com/watch?v=UCXxvVItLoM&list=PLyqKj7LwU2RsCtKw3UlE85HYgPM3-xoO1&index=21&pp=iAQB"
+      "video": "https://www.youtube.com/watch?v=UCXxvVItLoM&list=PLyqKj7LwU2RsCtKw3UlE85HYgPM3-xoO1&index=21&pp=iAQB",
+      "sheetRow": 20
      },
      {
       "id": "d2e5",
       "name": "Cable Tricep Pushdowns",
       "repRange": "7-12",
-      "video": "https://www.youtube.com/watch?v=6Fzep104f0s&list=PLyqKj7LwU2RtMd8vP3NEoig1RPJQK78Ea&index=6&pp=iAQB"
+      "video": "https://www.youtube.com/watch?v=6Fzep104f0s&list=PLyqKj7LwU2RtMd8vP3NEoig1RPJQK78Ea&index=6&pp=iAQB",
+      "sheetRow": 21
      }
     ]
    },
@@ -122,30 +139,35 @@ export const SEED = {
      {
       "id": "d3e1",
       "name": "Smith Machine SLDL",
-      "repRange": "5-10"
+      "repRange": "5-10",
+      "sheetRow": 26
      },
      {
       "id": "d3e2",
       "name": "Bulgarian Split Squats",
-      "repRange": "5-10"
+      "repRange": "5-10",
+      "sheetRow": 27
      },
      {
       "id": "d3e3",
       "name": "DB Curls",
       "repRange": "7-12",
-      "video": "https://www.youtube.com/watch?v=iixND1P2lik&list=PLyqKj7LwU2Rt1cwOsHwdXa2TiRzjA6uoB&index=1&pp=iAQB"
+      "video": "https://www.youtube.com/watch?v=iixND1P2lik&list=PLyqKj7LwU2Rt1cwOsHwdXa2TiRzjA6uoB&index=1&pp=iAQB",
+      "sheetRow": 28
      },
      {
       "id": "d3e4",
       "name": "DB Lateral Raises",
       "repRange": "7-12",
-      "video": "https://www.youtube.com/watch?v=OuG1smZTsQQ&list=PLyqKj7LwU2RuNVJBl0CtfZdxQ99IhKCcu&index=5&pp=iAQB"
+      "video": "https://www.youtube.com/watch?v=OuG1smZTsQQ&list=PLyqKj7LwU2RuNVJBl0CtfZdxQ99IhKCcu&index=5&pp=iAQB",
+      "sheetRow": 29
      },
      {
       "id": "d3e5",
       "name": "Cable Crunch",
       "repRange": "8-15",
-      "video": "https://www.youtube.com/watch?v=6GMKPQVERzw&list=PLyqKj7LwU2RvTgEW_QlCCjtIL5d_KP_-I&index=6"
+      "video": "https://www.youtube.com/watch?v=6GMKPQVERzw&list=PLyqKj7LwU2RvTgEW_QlCCjtIL5d_KP_-I&index=6",
+      "sheetRow": 30
      }
     ]
    },
@@ -157,31 +179,36 @@ export const SEED = {
      {
       "id": "d4e1",
       "name": "Lat Pulldowns",
-      "repRange": "7-12"
+      "repRange": "7-12",
+      "sheetRow": 34
      },
      {
       "id": "d4e2",
       "name": "Seated Cable Row",
       "repRange": "7-12",
-      "video": "https://www.youtube.com/watch?v=UCXxvVItLoM&list=PLyqKj7LwU2RsCtKw3UlE85HYgPM3-xoO1&index=21&pp=iAQB"
+      "video": "https://www.youtube.com/watch?v=UCXxvVItLoM&list=PLyqKj7LwU2RsCtKw3UlE85HYgPM3-xoO1&index=21&pp=iAQB",
+      "sheetRow": 35
      },
      {
       "id": "d4e3",
       "name": "Smith Machine Incline Bench",
       "repRange": "5-10",
-      "video": "https://www.youtube.com/watch?v=8urE8Z8AMQ4&list=PLyqKj7LwU2RuyZwWCIiDHuFZGN11QW3Ff&index=28&pp=iAQB"
+      "video": "https://www.youtube.com/watch?v=8urE8Z8AMQ4&list=PLyqKj7LwU2RuyZwWCIiDHuFZGN11QW3Ff&index=28&pp=iAQB",
+      "sheetRow": 36
      },
      {
       "id": "d4e4",
       "name": "Flat DB Flyes",
       "repRange": "7-12",
-      "video": "https://www.youtube.com/watch?v=JFm8KbhjibM&list=PLyqKj7LwU2RuyZwWCIiDHuFZGN11QW3Ff&index=7&pp=iAQB"
+      "video": "https://www.youtube.com/watch?v=JFm8KbhjibM&list=PLyqKj7LwU2RuyZwWCIiDHuFZGN11QW3Ff&index=7&pp=iAQB",
+      "sheetRow": 37
      },
      {
       "id": "d4e5",
       "name": "Cable Tricep Pushdowns",
       "repRange": "7-12",
-      "video": "https://www.youtube.com/watch?v=6Fzep104f0s&list=PLyqKj7LwU2RtMd8vP3NEoig1RPJQK78Ea&index=6&pp=iAQB"
+      "video": "https://www.youtube.com/watch?v=6Fzep104f0s&list=PLyqKj7LwU2RtMd8vP3NEoig1RPJQK78Ea&index=6&pp=iAQB",
+      "sheetRow": 38
      }
     ]
    }
@@ -1860,16 +1887,16 @@ export const SEED = {
  },
  "body": {
   "startDate": "2026-09-24",
-  "startWeight": 208.0,
+  "startWeight": 208,
   "weeklyChangePct": -0.008,
   "entries": [
    {
     "date": "2026-09-24",
-    "weight": 208.0
+    "weight": 208
    },
    {
     "date": "2026-09-26",
-    "weight": 206.0
+    "weight": 206
    },
    {
     "date": "2026-09-28",
@@ -1893,7 +1920,7 @@ export const SEED = {
    },
    {
     "date": "2026-10-06",
-    "weight": 201.0
+    "weight": 201
    },
    {
     "date": "2026-10-10",
@@ -1929,7 +1956,7 @@ export const SEED = {
    },
    {
     "date": "2026-10-24",
-    "weight": 199.0
+    "weight": 199
    }
   ]
  }

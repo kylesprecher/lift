@@ -36,6 +36,13 @@ export function parseCSV(text) {
   return rows;
 }
 
+/** 0-based column index -> spreadsheet letters (0 -> A, 26 -> AA). */
+export function columnLetter(index) {
+  let s = "";
+  for (let n = index + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
+  return s;
+}
+
 /** Spreadsheet id from a Google Sheets link, or the id itself. */
 export function sheetIdFromUrl(text) {
   const s = String(text ?? "").trim();
@@ -70,6 +77,7 @@ export function findWeekColumns(rows) {
         else if (label === "weight") cols.weight = c + k;
         else if (label === "rir") cols.rir = c + k;
         else if (label === "reps") cols.reps = c + k;
+        else if (label === "actual reps") cols.actual = c + k;
       }
       if (cols.sets != null || cols.weight != null) weeks.set(Number(m[1]), cols);
     });
@@ -107,9 +115,12 @@ export function readWorkout(rows, { weekNumber, dayName, dayIndex }) {
   const norm = (s) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
   const day = days.find((d) => norm(d.name) === norm(dayName)) ?? days[dayIndex];
   if (!day) throw new Error(`${dayName ?? `Day ${dayIndex + 1}`} isn't in the spreadsheet.`);
+  const repsCol = cols.actual ?? cols.reps;
   return {
     name: day.name,
     focus: day.focus,
+    // Where logged reps go back in the sheet (deload weeks only have "Reps").
+    repsCol: repsCol == null ? null : columnLetter(repsCol),
     exercises: day.rows.map((r) => {
       const read = (col, parse) => (col == null ? undefined : parse(cell(rows, r, col)));
       const text = (v) => v || null;
@@ -119,7 +130,7 @@ export function readWorkout(rows, { weekNumber, dayName, dayIndex }) {
         rir: read(cols.rir, text),
         reps: read(cols.reps, text),
       };
-      return { name: cell(rows, r, 0), repRange: cell(rows, r, 1) || null, target: t };
+      return { name: cell(rows, r, 0), repRange: cell(rows, r, 1) || null, target: t, row: r + 1 };
     }),
   };
 }
