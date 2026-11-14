@@ -10,6 +10,7 @@ Lift is a phone-friendly web app for tracking workouts, exercises, sets and reps
 | **Program** | The spreadsheet grid: exercises × weeks, showing planned `sets × weight`, RIR, and the reps you actually did, colored green for done and amber for partial. Tap a cell to log that session. Tap an exercise to edit its name, rep range, video, note or per-week targets, or to reorder or delete it. You can also add exercises, days and weeks. |
 | **Progress** | How much of the program you've finished, your next session, and pounds worked and sets for the latest week. For each exercise there's a chart of estimated 1RM and top weight against the program's target weight, plus a week-by-week table. Charts of **pounds worked** (sets × weight, added up over every exercise) and **sets** per week, labeled with the % change from the week before, plus a week-over-week table. Weeks still in progress are marked. Also lists your best lift for each exercise. |
 | **Body** | Daily weigh-ins, 7-day averages and week-over-week change, and a goal line (from the sheet: 208 lb start, −0.8%/week). |
+| **PT** | Physical-therapy home exercises, tracked separately from the strength program. Set the plan by hand (exercise, body area, times per week, sets, reps, weight, video, note) or tap **Check Gmail for updates**: it reads your therapist's emails sent since the plan's source email, asks Claude to fold them into the plan, and shows every change for you to approve. Check off sets day by day (go back to log a missed day), see sessions done vs. each exercise's weekly target, weekly completion over the last 8 weeks, and a history of plan changes. |
 | **Data** | Appearance (match device, light or dark; the ☾/☀ button in the header switches too), auto-start for the rest timer, lb/kg, the linked Google Sheet, JSON backup export/import, CSV export of every set, and a reset back to the spreadsheet data. |
 
 The app works offline once it has loaded (there's a service worker), and you can add it to your phone's home screen.
@@ -59,8 +60,14 @@ js/store.js           localStorage persistence, import validation
 js/cloud.js           private per-user sync when hosted as a claude.ai Artifact
 js/chime.js           synthesized end-of-rest chime (Web Audio)
 js/sheet.js           reads one workout's targets from the program sheet (CSV)
+js/pt.js              physical therapy: weekly targets, email cleanup, plan diff, Claude prompt
+js/pt-seed.js         starting PT plan (empty here; see below)
 js/seed.js            program + history from the spreadsheet
 sw.js                 offline cache
 scripts/build-single.mjs  bundles the app into one HTML file
 tests/*.test.js       unit tests
 ```
+
+## Private data
+
+Personal health details don't belong in a public repository. `js/pt-seed.js` is empty in git; when `private/pt-seed.json` exists (it's git-ignored), `npm run build` and `npm run build:artifact` put that plan into the built app instead. It uses the same shape as `state.pt` (`plan.exercises`, `plan.source`, `sender`, `log`, `history`).

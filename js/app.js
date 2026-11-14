@@ -4,6 +4,7 @@ import { lineChart, columnChart } from "./charts.js";
 import * as cloud from "./cloud.js";
 import * as chime from "./chime.js";
 import * as sheet from "./sheet.js";
+import * as PT from "./pt.js";
 
 let state = load();
 const ui = { view: "workout", weekId: null, dayId: null, exerciseId: null };
@@ -136,7 +137,7 @@ function toast(msg) {
 
 // ------------------------------------------------------------------ routing
 
-const VIEWS = ["workout", "program", "progress", "body", "data"];
+const VIEWS = ["workout", "program", "progress", "body", "pt", "data"];
 
 // Views are plain `#token` links so they also work when the app is hosted
 // as an Artifact; the selected week/day lives in `ui`, not the URL.
@@ -202,7 +203,7 @@ new MutationObserver(applyTheme).observe(document.documentElement, { attributes:
 
 function render() {
   applyTheme();
-  const views = { workout: renderWorkout, program: renderProgram, progress: renderProgress, body: renderBody, data: renderSettings };
+  const views = { workout: renderWorkout, program: renderProgram, progress: renderProgress, body: renderBody, pt: renderPT, data: renderSettings };
   views[ui.view]();
   main.focus({ preventScroll: true });
 }
@@ -1451,6 +1452,375 @@ function onBodySubmit(e) {
   render();
 }
 
+// ------------------------------------------------------------------ physical therapy
+
+const ptDate = () => ui.ptDate ?? PT.localToday();
+const ptDay = (iso) =>
+  iso === PT.localToday() ? "Today" : L.toDate(iso).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+
+function renderPT() {
+  const pt = state.pt;
+  const date = ptDate();
+  const week = PT.weekProgress(pt, PT.weekStart(date));
+  const byId = new Map(week.rows.map((r) => [r.exercise.id, r]));
+  const areas = [...new Set(pt.plan.exercises.map((ex) => ex.area || "Other"))];
+  const src = pt.plan.source;
+  const history = PT.adherenceHistory(pt, PT.localToday(), 8);
+  const lastWeek = PT.weekProgress(pt, L.addDays(PT.weekStart(date), -7));
+  const lastById = new Map(lastWeek.rows.map((r) => [r.exercise.id, r]));
+
+  main.innerHTML = `
+    <section class="page-head">
+      <h2>Physical therapy</h2>
+      <p class="muted small">${
+        src
+          ? `Plan from ${esc(firstName(pt.sender))}'s email of ${shortDate(src.date.slice(0, 10))}${src.subject ? ` (“${esc(src.subject)}”)` : ""}${
+              src.url ? ` · <a href="${esc(src.url)}" target="_blank" rel="noopener">open email ↗</a>` : ""
+            }`
+          : "Kept separate from your strength program."
+      }</p>
+      <div class="row-actions">
+        <button class="secondary" data-action="pt-gmail" id="pt-gmail">✉ Check Gmail for updates</button>
+        <button class="ghost" data-action="pt-add">+ Add exercise</button>
+      </div>
+    </section>
+
+    <section class="pt-day" aria-label="Day">
+      <button class="ghost" data-pt-day="-1" aria-label="Previous day">‹</button>
+      <div><b>${esc(ptDay(date))}</b><small class="muted">Week of ${shortDate(PT.weekStart(date))}</small></div>
+      <button class="ghost" data-pt-day="1" aria-label="Next day" ${date >= PT.localToday() ? "disabled" : ""}>›</button>
+    </section>
+
+    <section class="tile pt-week">
+      <span class="tile-label">This week</span>
+      <span class="tile-value">${week.done} <small>of ${week.target} sessions</small></span>
+      <div class="meter"><span style="width:${Math.round(week.pct * 100)}%"></span></div>
+      <span class="tile-sub">${week.rows.filter((r) => r.met).length} of ${week.rows.length} exercises on target</span>
+    </section>
+
+    ${
+      pt.plan.exercises.length
+        ? areas
+            .map(
+              (area) => `
+      <section class="pt-area">
+        <h3>${esc(area)}</h3>
+        ${pt.plan.exercises
+          .filter((ex) => (ex.area || "Other") === area)
+          .map((ex) => ptCard(ex, date, byId.get(ex.id)))
+          .join("")}
+      </section>`
+            )
+            .join("")
+        : `<p class="empty">No PT exercises yet. Tap “Check Gmail for updates” to pull them from ${esc(firstName(pt.sender))}'s emails, or add one yourself.</p>`
+    }
+
+    <section class="card">
+      <h3>Weekly completion</h3>
+      <p class="muted small">Sessions done against your current plan's weekly targets. The lighter bar is this week, still in progress.</p>
+      <div id="pt-chart"></div>
+      ${
+        pt.plan.exercises.length
+          ? `<div class="table-scroll"><table class="data"><thead><tr><th>Exercise</th><th class="num">This week</th><th class="num">Last week</th></tr></thead><tbody>${pt.plan.exercises
+              .map((ex) => {
+                const t = byId.get(ex.id);
+                const l = lastById.get(ex.id);
+                return `<tr><td class="wrap">${esc(ex.name)}<small>${esc(PT.frequencyText(ex.perWeek))}</small></td><td class="num ${t.met ? "up" : ""}">${t.done}/${t.target}</td><td class="num ${l.met ? "up" : ""}">${l.done}/${l.target}</td></tr>`;
+              })
+              .join("")}</tbody></table></div>`
+          : ""
+      }
+    </section>
+
+    ${
+      pt.history.length
+        ? `<details class="card"><summary>Plan changes (${pt.history.length})</summary><ul class="pt-history">${pt.history
+            .slice()
+            .reverse()
+            .map(
+              (h) => `<li><b>${shortDate(h.date)}</b>${h.source?.subject ? ` · ${esc(h.source.subject)}` : ""}<ul>${(h.changes ?? []).map((c) => `<li>${esc(c)}</li>`).join("")}</ul></li>`
+            )
+            .join("")}</ul></details>`
+        : ""
+    }
+
+    <details class="card">
+      <summary>Email settings</summary>
+      <form id="pt-sender-form" class="goal-form">
+        <label class="field"><span>Therapist's email address</span><input id="pt-sender" name="sender" type="email" value="${esc(pt.sender)}" placeholder="therapist@clinic.com" required></label>
+        <button class="secondary" type="submit">Save</button>
+      </form>
+      <p class="muted small">“Check Gmail” reads emails from this address sent after your plan's source email and asks Claude to update the plan. You review every change before it's applied.</p>
+    </details>`;
+
+  columnChart(main.querySelector("#pt-chart"), {
+    label: "Weekly PT completion",
+    bars: history.map((h) => ({
+      label: `${Number(h.start.slice(5, 7))}/${Number(h.start.slice(8))}`,
+      title: `Week of ${shortDate(h.start)}${h.current ? " (in progress)" : ""}`,
+      value: Math.round(h.pct * 100),
+      partial: h.current,
+      detail: `${h.done} of ${h.target} sessions`,
+    })),
+    color: "var(--series-1)",
+    max: 100,
+    yFormat: (y) => `${y}%`,
+  });
+}
+
+const firstName = (email) => {
+  const n = String(email).split("@")[0].split(/[._-]/)[0];
+  return n ? n[0].toUpperCase() + n.slice(1) : "your therapist";
+};
+
+function ptCard(ex, date, week) {
+  const done = PT.setsDone(state.pt, date, ex.id);
+  const sets = Math.max(1, Number(ex.sets) || 1);
+  const complete = done >= sets;
+  return `
+    <article class="card pt-ex ${complete ? "complete" : ""}" data-pt-ex="${ex.id}">
+      <header>
+        <h4>${esc(ex.name)}</h4>
+        <button class="ghost" data-pt-edit="${ex.id}" aria-label="Edit ${esc(ex.name)}">Edit</button>
+      </header>
+      <p class="target">${sets} × ${esc(ex.reps)}${ex.weight ? ` · ${L.fmt(ex.weight)} ${unit()}` : ""} · ${esc(PT.frequencyText(ex.perWeek))}
+        <span class="pt-count ${week?.met ? "up" : ""}">${week ? `${week.done}/${week.target} this week` : ""}</span></p>
+      ${ex.note ? `<p class="note">${esc(ex.note)}</p>` : ""}
+      <div class="pt-sets" role="group" aria-label="Sets done">
+        ${Array.from({ length: sets }, (_, i) => `<button class="pt-set" data-pt-set="${i}" aria-pressed="${i < done}" aria-label="Set ${i + 1}">${i + 1}</button>`).join("")}
+        ${complete ? '<span class="pt-done">✓ Done</span>' : ""}
+        ${ex.video ? `<a class="video" href="${esc(ex.video)}" target="_blank" rel="noopener">Video ↗</a>` : ""}
+      </div>
+    </article>`;
+}
+
+function onPTClick(e) {
+  const day = e.target.closest("[data-pt-day]");
+  if (day) {
+    const next = L.addDays(ptDate(), Number(day.dataset.ptDay));
+    ui.ptDate = next >= PT.localToday() ? null : next;
+    render();
+    return;
+  }
+  const setBtn = e.target.closest("[data-pt-set]");
+  if (setBtn) {
+    const exId = setBtn.closest("[data-pt-ex]").dataset.ptEx;
+    const date = ptDate();
+    const log = (state.pt.log[date] ??= {});
+    const count = PT.toggleSet(PT.setsDone(state.pt, date, exId), Number(setBtn.dataset.ptSet));
+    if (count) log[exId] = { ...log[exId], sets: count };
+    else delete log[exId];
+    if (!Object.keys(log).length) delete state.pt.log[date];
+    persist();
+    const y = window.scrollY;
+    render();
+    window.scrollTo(0, y);
+    return;
+  }
+  const edit = e.target.closest("[data-pt-edit]");
+  if (edit) return openPTDialog(edit.dataset.ptEdit);
+  const action = e.target.closest("[data-action]")?.dataset.action;
+  if (action === "pt-add") openPTDialog(null);
+  if (action === "pt-gmail") checkTherapistEmail();
+}
+
+function onPTSubmit(e) {
+  if (e.target.id !== "pt-sender-form") return;
+  e.preventDefault();
+  state.pt.sender = new FormData(e.target).get("sender").trim();
+  persist();
+  toast("Saved");
+  render();
+}
+
+function openPTDialog(exId) {
+  const dlg = document.getElementById("exercise-dialog");
+  const form = dlg.querySelector("form");
+  const list = state.pt.plan.exercises;
+  const ex = list.find((x) => x.id === exId) ?? { name: "", area: "", perWeek: 3, sets: 3, reps: "10", weight: null, video: "", note: "" };
+  const areas = [...new Set(list.map((x) => x.area).filter(Boolean))];
+  form.innerHTML = `
+    <h2>${exId ? "Edit PT exercise" : "Add PT exercise"}</h2>
+    <label class="field"><span>Name</span><input id="pt-name" name="name" required value="${esc(ex.name)}"></label>
+    <div class="field-row">
+      <label class="field"><span>Body area</span><input id="pt-area" name="area" list="pt-areas" value="${esc(ex.area)}" placeholder="e.g. Shoulder"></label>
+      <label class="field"><span>Times per week</span>
+        <select id="pt-perweek" name="perWeek">${[1, 2, 3, 4, 5, 6, 7]
+          .map((n) => `<option value="${n}" ${Number(ex.perWeek) === n ? "selected" : ""}>${n === 7 ? "Daily (7)" : n}</option>`)
+          .join("")}</select>
+      </label>
+    </div>
+    <datalist id="pt-areas">${areas.map((a) => `<option value="${esc(a)}">`).join("")}</datalist>
+    <div class="field-row">
+      <label class="field"><span>Sets</span><input id="pt-sets" name="sets" type="number" min="1" max="20" inputmode="numeric" required value="${esc(ex.sets)}"></label>
+      <label class="field"><span>Reps</span><input id="pt-reps" name="reps" required value="${esc(ex.reps)}" placeholder="10-12"></label>
+      <label class="field"><span>Weight (${unit()})</span><input id="pt-weight" name="weight" type="number" min="0" step="any" inputmode="decimal" value="${esc(ex.weight ?? "")}" placeholder="none"></label>
+    </div>
+    <label class="field"><span>Video link</span><input id="pt-video" name="video" type="url" value="${esc(ex.video)}"></label>
+    <label class="field"><span>Note</span><input id="pt-note" name="note" value="${esc(ex.note)}" placeholder="e.g. 5 second lowering"></label>
+    <div class="dialog-actions">
+      ${exId ? '<button type="button" class="danger" data-pt-dlg="delete">Delete</button>' : ""}
+      <span class="spacer"></span>
+      <button type="button" class="secondary" data-pt-dlg="cancel">Cancel</button>
+      <button type="submit" class="primary">Save</button>
+    </div>`;
+  form.onclick = async (e) => {
+    const a = e.target.closest("[data-pt-dlg]")?.dataset.ptDlg;
+    if (a === "cancel") dlg.close();
+    if (a === "delete") {
+      dlg.close();
+      const sure = await ask({ title: `Remove ${ex.name}?`, message: "It leaves your plan. Sets you've already logged stay in your history.", ok: "Remove", danger: true });
+      if (!sure) return;
+      state.pt.plan.exercises = list.filter((x) => x.id !== exId);
+      persist();
+      render();
+    }
+  };
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    const clean = PT.cleanExercise(Object.fromEntries(new FormData(form)));
+    if (!clean) return;
+    if (exId) Object.assign(ex, clean);
+    else list.push({ ...clean, id: uid("pt") });
+    state.pt.plan.updatedAt = PT.localToday();
+    persist();
+    dlg.close();
+    render();
+    toast(exId ? "Exercise updated" : "Exercise added");
+  };
+  dlg.showModal();
+}
+
+// --- Gmail -> plan
+
+const SAMPLE_ERRORS = {
+  not_granted: "Lift needs your permission to ask Claude to read the emails. Try again and choose Allow.",
+  sampling_disabled: "Claude isn't available for your account right now.",
+  not_declared: "This version of Lift can't ask Claude. Reload the page.",
+  rate_limited: "Too many requests just now. Try again in a minute.",
+  session_expired: "Sign in to Claude again, then retry.",
+  prompt_too_large: "Those emails are too long to read at once.",
+  invalid_json: "Claude's answer couldn't be read. Try again.",
+  empty_completion: "Claude didn't answer. Try again.",
+  refused: "Claude couldn't read these emails.",
+};
+
+const GMAIL_ERRORS = {
+  server_not_connected: "Gmail isn't connected. Add it in claude.ai Settings → Connectors, then try again.",
+  needs_reauth: "Gmail needs to be reconnected in claude.ai Settings → Connectors.",
+  selection_required: "You have more than one Gmail connected. Pick one when Claude asks, then try again.",
+  approval_required: "Lift needs your permission to read Gmail. Try again and choose Allow.",
+  not_in_manifest: "Lift needs your permission to read Gmail. Try again and choose Allow.",
+  consent_required: "Lift needs your permission to read Gmail. Try again and choose Allow.",
+  blocked_by_policy: "Your organization doesn't allow Lift to use Gmail.",
+  server_unavailable: "Gmail didn't respond. Try again in a moment.",
+};
+
+function gmailQueryDate(iso) {
+  // Gmail's after: is a calendar day; start a day early and filter exactly below.
+  return L.addDays(iso.slice(0, 10), -1).replace(/-/g, "/");
+}
+
+async function checkTherapistEmail() {
+  const pt = state.pt;
+  const [mcp, sample] = window.claude?.use ? await Promise.all([window.claude.use("mcp"), window.claude.use("sample")]) : [null, null];
+  if (!mcp || !sample) {
+    ask({ title: "Open Lift in Claude to check Gmail", message: "Reading your therapist's emails works in the Lift app on claude.ai. Here you can still add and edit exercises yourself.", info: true });
+    return;
+  }
+  const btn = document.getElementById("pt-gmail");
+  const busy = (text) => {
+    if (btn) {
+      btn.disabled = Boolean(text);
+      btn.textContent = text || "✉ Check Gmail for updates";
+    }
+  };
+  if (!pt.sender) {
+    ask({ title: "Add your therapist's email first", message: "Open “Email settings” at the bottom of this page and enter the address their exercise emails come from.", info: true });
+    return;
+  }
+  const since = pt.plan.source?.date ?? null;
+  try {
+    busy("Searching Gmail…");
+    const query = `from:${pt.sender} ${since ? `after:${gmailQueryDate(since)}` : "newer_than:180d"}`;
+    const found = await mcp.callTool("Gmail", "search_threads", { query, pageSize: 10, view: "THREAD_VIEW_MINIMAL" }, { cache: false });
+    const ids = (found.payload?.threads ?? []).map((t) => t.id).filter(Boolean).slice(0, 10);
+    const threads = [];
+    for (const threadId of ids) {
+      busy(`Reading email ${threads.length + 1} of ${ids.length}…`);
+      const t = await mcp.callTool("Gmail", "get_thread", { threadId, messageFormat: "PLAIN_TEXT" }, { cache: false });
+      threads.push(t.payload);
+    }
+    const emails = PT.therapistMessages(threads, pt.sender).filter((m) => !since || m.date > since);
+    if (!emails.length) {
+      toast(`No new emails from ${firstName(pt.sender)}${since ? ` since ${shortDate(since.slice(0, 10))}` : ""}`);
+      return;
+    }
+    busy(`Asking Claude about ${emails.length} email${emails.length > 1 ? "s" : ""}…`);
+    const reply = PT.readPlanReply(await sample.json(PT.planPrompt(pt.plan.exercises, emails), { modelTier: "default" }));
+    previewPlanUpdate(reply, emails);
+  } catch (err) {
+    const msg = GMAIL_ERRORS[err?.code] ?? SAMPLE_ERRORS[err?.code] ?? (err instanceof Error ? err.message : "Couldn't check Gmail. Try again in a moment.");
+    ask({ title: "Couldn't update from Gmail", message: msg, info: true });
+  } finally {
+    busy("");
+  }
+}
+
+const PT_FIELD_NAMES = { area: "Area", perWeek: "Per week", sets: "Sets", reps: "Reps", weight: "Weight", video: "Video", note: "Note" };
+
+function previewPlanUpdate(reply, emails) {
+  const pt = state.pt;
+  const latest = emails.at(-1);
+  const source = { date: latest.date, subject: latest.subject, url: latest.url };
+  const diff = PT.diffPlan(pt.plan.exercises, reply.exercises);
+  const nothing = !diff.added.length && !diff.removed.length && !diff.changed.length;
+  if (nothing) {
+    pt.plan.source = source;
+    persist();
+    render();
+    toast(`${firstName(pt.sender)}'s latest email${emails.length > 1 ? "s don't" : " doesn't"} change your plan`);
+    return;
+  }
+  const val = (f, v) => (v == null || v === "" ? "—" : f === "perWeek" ? PT.frequencyText(v) : f === "video" ? "link" : esc(v));
+  const dlg = document.getElementById("ask-dialog");
+  const form = dlg.querySelector("form");
+  form.innerHTML = `
+    <h2>Update your PT plan?</h2>
+    <p class="muted">From ${emails.length} email${emails.length > 1 ? "s" : ""} by ${esc(firstName(pt.sender))}, latest ${shortDate(latest.date.slice(0, 10))}. Check it against the email before applying.</p>
+    ${reply.changes.length ? `<ul class="import-list">${reply.changes.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>` : ""}
+    <ul class="import-list">
+      ${diff.added.map((x) => `<li><b>${esc(x.name)}</b> <span class="pill">New</span><ul><li>${esc(x.area)} · ${x.sets} × ${esc(x.reps)} · ${PT.frequencyText(x.perWeek)}</li></ul></li>`).join("")}
+      ${diff.changed
+        .map(
+          (c) => `<li><b>${esc(c.exercise.name)}</b><ul>${c.fields
+            .map((f) => `<li>${PT_FIELD_NAMES[f.field]}: <s>${val(f.field, f.from)}</s> → ${val(f.field, f.to)}</li>`)
+            .join("")}</ul></li>`
+        )
+        .join("")}
+      ${diff.removed.map((x) => `<li><b>${esc(x.name)}</b> <span class="pill">Removed</span></li>`).join("")}
+    </ul>
+    <p class="muted small"><a href="${esc(latest.url)}" target="_blank" rel="noopener">Open the latest email ↗</a></p>
+    <div class="dialog-actions">
+      <span class="spacer"></span>
+      <button type="button" class="secondary" data-cancel>Not now</button>
+      <button type="submit" class="primary">Apply changes</button>
+    </div>`;
+  form.querySelector("[data-cancel]").onclick = () => dlg.close();
+  dlg.onclose = null;
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    pt.history.push({ date: PT.localToday(), source, changes: reply.changes, exercises: pt.plan.exercises });
+    pt.history = pt.history.slice(-20);
+    pt.plan = { exercises: PT.mergePlan(pt.plan.exercises, reply.exercises, () => uid("pt")), source, updatedAt: PT.localToday() };
+    persist();
+    dlg.close();
+    render();
+    toast("PT plan updated");
+  };
+  dlg.showModal();
+}
+
 // ------------------------------------------------------------------ settings
 
 function renderSettings() {
@@ -1605,6 +1975,7 @@ main.addEventListener("click", (e) => {
   if (ui.view === "workout") onWorkoutClick(e);
   if (ui.view === "program") onProgramClick(e);
   if (ui.view === "data") onSettingsClick(e);
+  if (ui.view === "pt") onPTClick(e);
   if (ui.view === "body") {
     const date = e.target.closest("[data-del]")?.dataset.del;
     if (!date) return;
@@ -1619,6 +1990,7 @@ main.addEventListener("click", (e) => {
 main.addEventListener("submit", (e) => {
   if (ui.view === "body") onBodySubmit(e);
   if (ui.view === "data") onSettingsSubmit(e);
+  if (ui.view === "pt") onPTSubmit(e);
 });
 // Enter in a set input moves to the next input instead of submitting anything.
 main.addEventListener("keydown", (e) => {

@@ -1,6 +1,6 @@
 // Offline support: serve from the network when possible, fall back to the
 // cache when offline (e.g. no signal in the gym).
-const CACHE = "lift-v4";
+const CACHE = "lift-v5";
 const ASSETS = [
   "./",
   "./index.html",
@@ -12,6 +12,8 @@ const ASSETS = [
   "./js/cloud.js",
   "./js/chime.js",
   "./js/sheet.js",
+  "./js/pt.js",
+  "./js/pt-seed.js",
   "./js/seed.js",
   "./manifest.webmanifest",
   "./icon.svg",

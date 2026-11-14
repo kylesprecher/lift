@@ -129,7 +129,7 @@ export function lineChart(container, opts) {
  *   detail: extra tooltip line; partial: drawn lighter (e.g. a week still in progress)
  */
 export function columnChart(container, opts) {
-  const { bars, color = "var(--series-1)", yFormat = compact, height = 200 } = opts;
+  const { bars, color = "var(--series-1)", yFormat = compact, height = 200, max } = opts;
   container.innerHTML = "";
   container.classList.add("chart");
   if (!bars.some((b) => b.value > 0)) {
@@ -138,7 +138,8 @@ export function columnChart(container, opts) {
   }
   const width = Math.max(280, container.clientWidth || 600);
   const m = { top: 24, right: 8, bottom: 26, left: 44 };
-  const ticks = niceTicks(0, Math.max(...bars.map((b) => b.value)));
+  // `max` pins the scale (e.g. 100 for percentages) so small values look small.
+  const ticks = niceTicks(0, Math.max(max ?? 0, ...bars.map((b) => b.value)));
   const yMax = ticks[ticks.length - 1];
   const band = (width - m.left - m.right) / bars.length;
   const barW = Math.min(24, band * 0.6);
@@ -154,10 +155,15 @@ export function columnChart(container, opts) {
   tip.className = "tooltip";
   tip.hidden = true;
   container.appendChild(tip);
+  // Thin out x labels when bars are narrow, always keeping the last (newest) one.
+  const longest = Math.max(...bars.map((b) => String(b.label).length));
+  const every = Math.max(1, Math.ceil((longest * 6.5 + 6) / band));
   bars.forEach((b, i) => {
     const cx = m.left + band * (i + 0.5);
-    const label = el("text", { x: cx, y: height - 6, class: "tick", "text-anchor": "middle" }, svg);
-    label.textContent = b.label;
+    if ((bars.length - 1 - i) % every === 0) {
+      const label = el("text", { x: cx, y: height - 6, class: "tick", "text-anchor": "middle" }, svg);
+      label.textContent = b.label;
+    }
     if (b.value > 0) {
       const top = sy(b.value);
       const base = sy(0);

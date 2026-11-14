@@ -1,5 +1,7 @@
 // Persistence: the whole app state lives in one localStorage key.
 import { SEED } from "./seed.js";
+import { PT_SEED } from "./pt-seed.js";
+import { emptyPT, DEFAULT_SENDER } from "./pt.js";
 
 const KEY = "lift.state.v1";
 
@@ -7,7 +9,20 @@ const clone = (x) => JSON.parse(JSON.stringify(x));
 
 export function freshState() {
   // updatedAt 0: any copy saved from another device is newer than this.
-  return { ...clone(SEED), settings: { restSeconds: 180, autoRest: true }, updatedAt: 0 };
+  return { ...clone(SEED), pt: startingPT(), settings: { restSeconds: 180, autoRest: true }, updatedAt: 0 };
+}
+
+const startingPT = () => (PT_SEED ? { ...emptyPT(), ...clone(PT_SEED) } : emptyPT());
+
+/** Physical therapy data, kept separate from the strength program. */
+function migratePT(pt) {
+  if (!pt || typeof pt !== "object" || !Array.isArray(pt.plan?.exercises)) return startingPT();
+  return {
+    plan: { source: null, updatedAt: null, ...pt.plan },
+    log: pt.log ?? {},
+    history: Array.isArray(pt.history) ? pt.history : [],
+    sender: pt.sender || DEFAULT_SENDER,
+  };
 }
 
 export function load() {
@@ -61,6 +76,7 @@ export function migrate(data) {
     logs: data.logs ?? {},
     sessions: data.sessions ?? {},
     body: data.body ?? { startDate: null, startWeight: null, weeklyChangePct: 0, entries: [] },
+    pt: migratePT(data.pt),
     settings: {
       autoRest: true,
       ...data.settings,

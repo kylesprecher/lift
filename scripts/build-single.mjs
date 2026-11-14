@@ -6,7 +6,7 @@
 //                                                 (body content only; the
 //                                                 Artifact host adds the
 //                                                 doctype/head/body skeleton)
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,19 +15,25 @@ const read = (p) => readFileSync(join(root, p), "utf8");
 const artifact = process.argv.includes("--artifact");
 
 // Dependency order: each module only imports modules listed before it.
-const MODULES = ["seed", "logic", "store", "charts", "cloud", "chime", "sheet", "app"];
+const MODULES = ["seed", "logic", "pt", "pt-seed", "store", "charts", "cloud", "chime", "sheet", "app"];
+const PRIVATE_PT = join(root, "private", "pt-seed.json");
 
 function bundle() {
   const parts = [];
   for (const name of MODULES) {
     let src = read(`js/${name}.js`);
+    // Personal PT plan: only in local builds, never in the repository.
+    if (name === "pt-seed" && existsSync(PRIVATE_PT)) {
+      src = `export const PT_SEED = ${JSON.stringify(JSON.parse(readFileSync(PRIVATE_PT, "utf8")))};`;
+    }
     // `import * as X from "./mod.js"` / `import { a, b } from "./mod.js"`
-    src = src.replace(/^import \* as (\w+) from "\.\/(\w+)\.js";$/gm, "const $1 = __$2;");
-    src = src.replace(/^import \{([^}]+)\} from "\.\/(\w+)\.js";$/gm, "const {$1} = __$2;");
+    const mod = (m) => `__${m.replace(/-/g, "_")}`;
+    src = src.replace(/^import \* as (\w+) from "\.\/([\w-]+)\.js";$/gm, (_, v, m) => `const ${v} = ${mod(m)};`);
+    src = src.replace(/^import \{([^}]+)\} from "\.\/([\w-]+)\.js";$/gm, (_, names, m) => `const {${names}} = ${mod(m)};`);
     if (/^import /m.test(src)) throw new Error(`Unsupported import in js/${name}.js`);
     const exported = [...src.matchAll(/^export (?:async )?(?:function|const|let) (\w+)/gm)].map((m) => m[1]);
     src = src.replace(/^export /gm, "");
-    parts.push(`const __${name} = (() => {\n${src}\nreturn { ${exported.join(", ")} };\n})();`);
+    parts.push(`const __${name.replace(/-/g, "_")} = (() => {\n${src}\nreturn { ${exported.join(", ")} };\n})();`);
   }
   // Keep a literal "</script" in the code from ending the inline script.
   return parts.join("\n\n").replace(/<\/script/gi, "<\\/script");

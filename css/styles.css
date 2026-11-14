@@ -1022,7 +1022,7 @@ table.targets input {
   position: fixed;
   inset: auto 0 0 0;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   background: var(--surface);
   border-top: 1px solid var(--border);
   padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -1097,4 +1097,104 @@ table.targets input {
 .summary td.reps {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+}
+
+/* ---------- physical therapy */
+
+.pt-day {
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
+  align-items: center;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px;
+}
+.pt-day div {
+  display: grid;
+}
+.pt-day .ghost {
+  font-size: 1.4rem;
+  min-height: 44px;
+}
+.pt-week .tile-value small {
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: var(--text-2);
+}
+.pt-area {
+  display: grid;
+  gap: 10px;
+}
+.pt-area > h3 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+  margin-top: 4px;
+}
+.pt-ex h4 {
+  margin: 0;
+  font-size: 1rem;
+}
+.pt-ex p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+.pt-ex .note {
+  color: var(--text-2);
+  font-style: italic;
+}
+.pt-ex.complete {
+  border-color: color-mix(in srgb, var(--good) 45%, var(--border));
+}
+.pt-count {
+  float: right;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.pt-count.up {
+  color: var(--good-text);
+}
+.pt-sets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.pt-set {
+  width: 44px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text-2);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.pt-set[aria-pressed="true"] {
+  background: var(--good);
+  border-color: var(--good);
+  color: #fff;
+}
+.pt-done {
+  color: var(--good-text);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.pt-sets .video {
+  margin-left: auto;
+  font-size: 0.875rem;
+}
+.pt-history {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+.pt-history ul {
+  padding-left: 16px;
+  color: var(--text-2);
 }
